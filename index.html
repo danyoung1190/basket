@@ -142,7 +142,21 @@ main{max-width:640px; margin:0 auto}
   padding:20px 16px 6px; font:700 16px/1.2 var(--round); color:var(--ink);
 }
 .row.header .n{font:500 13px var(--ui); color:var(--muted)}
-.row.header.empty{padding-top:12px; padding-bottom:4px; font-size:13px; color:var(--muted); opacity:.75}
+.row.header.empty{display:none}
+body.is-dragging .row.header.empty{display:flex; padding-top:12px; padding-bottom:4px; font-size:13px; color:var(--muted)}
+.qty{display:inline-block; margin-left:4px; padding:1px 7px; border-radius:9px; background:var(--chip); font-size:14px; font-weight:700; color:var(--ink); text-decoration:none}
+.item.done .qty{color:var(--muted)}
+.qtyrow{display:flex; align-items:center; justify-content:space-between; margin-top:18px; font-weight:600}
+.stepper{display:flex; align-items:center; gap:4px; background:var(--chip); border-radius:14px; padding:4px}
+.step{width:44px; height:40px; border:0; border-radius:10px; background:var(--surface); font:600 22px/1 var(--ui)}
+.stepper output{min-width:36px; text-align:center; font:700 18px var(--round)}
+.stats{font-size:14px}
+.due{margin:10px 16px 0; padding:12px; border-radius:16px; background:var(--surface); border:1px solid var(--line)}
+.due-head{display:flex; align-items:center; justify-content:space-between; margin:0 2px 10px}
+.due-head span{font:700 16px var(--round)}
+.due-skip{border:0; background:none; color:var(--muted); font-size:14px; font-weight:600; padding:6px 4px}
+.due-all{width:100%; margin-top:12px; height:46px}
+.sug-add .cat{margin-left:auto; font-size:13px; color:var(--muted)}
 
 .row.dragging{z-index:5; background:var(--surface); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.2); transition:none}
 .row.dragging::after{display:none}
@@ -262,6 +276,7 @@ label.btn{cursor:pointer}
     </button>
   </form>
   <div id="suggest" hidden></div>
+  <div id="dueBar"></div>
   <div id="sortBar"></div>
   <ul id="list" class="list" aria-label="Items to get"></ul>
   <div id="doneWrap"></div>
@@ -276,7 +291,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.2.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -284,7 +299,39 @@ const MAX_HISTORY = 600;
 const LIST_COLOR = '#2F6B55';
 const PALETTE = ['#C8412E','#2D5BC9','#7B3FA0','#A8720A','#14837D','#3F8A2F','#C2185B','#22396F','#B85A12','#56606B'];
 const SHOP_SUGGESTIONS = ['Tesco',"Sainsbury's",'Asda','Aldi','Lidl','Morrisons','M&S','Waitrose','Co-op','Iceland','Ocado','Costco'];
-const SECTION_SUGGESTIONS = ['Fruit & veg','Bakery','Meat & fish','Dairy & eggs','Chilled','Frozen','Cupboard','Drinks','Snacks','Household','Toiletries','Baby','Pets'];
+// Built-in catalogue: common UK grocery items and the section each one usually lives in.
+const STANDARD_SECTIONS = ['Fruit & veg','Bakery','Meat & fish','Fridge','Freezer','Cupboard','Snacks & treats','Drinks','Household','Toiletries','Baby','Pets'];
+const SECTION_SUGGESTIONS = STANDARD_SECTIONS;
+// Other names a shop's section might go by, so filing still works if she renames them.
+const SECTION_ALIASES = {
+  'Fruit & veg':['fruit and veg','fruit & vegetables','fruit and vegetables','produce','veg','fresh produce'],
+  'Bakery':['bread','bread & bakery','bakery & bread'],
+  'Meat & fish':['meat','fish','meat and fish','butcher','butchers','meat & poultry'],
+  'Fridge':['dairy','dairy & eggs','dairy and eggs','chilled','fridge & dairy','milk & dairy'],
+  'Freezer':['frozen','frozen food','frozen foods'],
+  'Cupboard':['food cupboard','store cupboard','tins & packets','tins','dry goods','pantry','larder'],
+  'Snacks & treats':['snacks','crisps & snacks','sweets','biscuits','treats','confectionery'],
+  'Drinks':['beer & wine','alcohol','soft drinks','drinks & alcohol','wine'],
+  'Household':['cleaning','home','household & cleaning','laundry'],
+  'Toiletries':['health & beauty','health and beauty','beauty','pharmacy','personal care'],
+  'Baby':['baby & toddler','baby and toddler','kids'],
+  'Pets':['pet','pet food','pet care']
+};
+const CATALOG = {
+  'Fruit & veg':'Apples,Bananas,Oranges,Satsumas,Clementines,Easy peelers,Lemons,Limes,Grapes,Strawberries,Raspberries,Blueberries,Blackberries,Pears,Peaches,Nectarines,Plums,Cherries,Kiwi,Mango,Pineapple,Melon,Watermelon,Grapefruit,Pomegranate,Avocados,Tomatoes,Cherry tomatoes,Vine tomatoes,Cucumber,Lettuce,Iceberg lettuce,Little gem,Salad leaves,Bagged salad,Spinach,Rocket,Watercress,Peppers,Red peppers,Onions,Red onions,Spring onions,Shallots,Garlic,Ginger,Potatoes,Baby potatoes,New potatoes,Baking potatoes,Sweet potatoes,Carrots,Parsnips,Broccoli,Tenderstem broccoli,Cauliflower,Cabbage,Red cabbage,Brussels sprouts,Kale,Leeks,Celery,Courgettes,Aubergine,Mushrooms,Chestnut mushrooms,Green beans,Runner beans,Sugar snap peas,Mangetout,Asparagus,Corn on the cob,Butternut squash,Beetroot,Swede,Turnip,Radishes,Chillies,Fresh herbs,Coriander,Basil,Parsley,Mint,Rosemary,Thyme,Stir fry veg,Prepared veg,Fruit salad',
+  'Bakery':'Bread,White bread,Brown bread,Wholemeal bread,Seeded bread,Granary bread,Sourdough,Crusty loaf,Baguette,Ciabatta,Focaccia,Rolls,Bread rolls,Burger buns,Brioche buns,Hot dog rolls,Wraps,Tortilla wraps,Pitta bread,Naan bread,Bagels,Crumpets,English muffins,Croissants,Pain au chocolat,Teacakes,Hot cross buns,Scones,Muffins,Doughnuts,Cake,Birthday cake,Brioche,Pancakes,Fruit loaf,Malt loaf,Gluten free bread,Danish pastries,Iced buns,Bakery cookies',
+  'Meat & fish':'Chicken,Chicken breasts,Chicken thighs,Chicken drumsticks,Chicken wings,Whole chicken,Chicken mini fillets,Turkey,Turkey mince,Beef mince,Lean mince,Mince,Lamb mince,Pork mince,Steak,Sirloin steak,Rump steak,Fillet steak,Stewing beef,Diced beef,Beef joint,Pork joint,Lamb joint,Pork chops,Pork loin steaks,Pork belly,Gammon,Gammon steaks,Bacon,Smoked bacon,Streaky bacon,Back bacon,Sausages,Pork sausages,Chipolatas,Lamb chops,Leg of lamb,Diced lamb,Burgers,Beef burgers,Meatballs,Salmon,Salmon fillets,Smoked salmon,Cod,Haddock,Smoked haddock,Prawns,King prawns,Tuna steaks,Mackerel,Sea bass,Fish,Fish pie mix,Duck,Chorizo,Pancetta,Lardons,Liver,Ribs',
+  'Fridge':'Milk,Semi skimmed milk,Skimmed milk,Whole milk,Oat milk,Almond milk,Soya milk,Lactose free milk,Butter,Salted butter,Unsalted butter,Spread,Margarine,Cheese,Cheddar,Mature cheddar,Mild cheddar,Mozzarella,Parmesan,Feta,Halloumi,Brie,Camembert,Stilton,Goats cheese,Cream cheese,Philadelphia,Cottage cheese,Grated cheese,Cheese slices,Cheese strings,Babybel,Eggs,Free range eggs,Large eggs,Yoghurt,Greek yoghurt,Natural yoghurt,Kids yoghurts,Fromage frais,Petits filous,Single cream,Double cream,Whipping cream,Squirty cream,Sour cream,Creme fraiche,Custard,Ham,Sliced ham,Cooked chicken,Chicken slices,Turkey slices,Salami,Pepperoni,Pate,Houmous,Hummus,Coleslaw,Dips,Guacamole,Salsa dip,Fresh pasta,Tortellini,Gnocchi,Fresh soup,Ready meal,Fresh pizza,Pizza,Garlic bread,Quiche,Pork pies,Sausage rolls,Scotch eggs,Orange juice,Apple juice,Fresh juice,Smoothie,Tofu,Puff pastry,Shortcrust pastry,Filo pastry,Pastry,Lard,Olives,Sandwiches,Prepared salad,Pasta salad,Lunchables,Trifle,Cheesecake',
+  'Freezer':'Ice cream,Ice lollies,Frozen peas,Peas,Frozen sweetcorn,Frozen mixed veg,Frozen vegetables,Frozen spinach,Frozen berries,Frozen fruit,Oven chips,Chips,Potato waffles,Hash browns,Frozen roast potatoes,Yorkshire puddings,Fish fingers,Chicken nuggets,Frozen pizza,Frozen chicken,Frozen prawns,Frozen fish,Breaded fish,Battered fish,Fish cakes,Frozen burgers,Ice,Ice cubes,Frozen yoghurt,Frozen desserts,Onion rings,Frozen ready meal,Quorn mince,Quorn pieces,Veggie burgers,Veggie sausages,Spring rolls,Garlic baguette,Arctic roll,Viennetta,Frozen pastry,Frozen chips,Potato wedges,Mozzarella sticks,Chicken kievs,Frozen garlic bread',
+  'Cupboard':'Pasta,Spaghetti,Penne,Fusilli,Macaroni,Lasagne sheets,Tagliatelle,Noodles,Egg noodles,Rice noodles,Instant noodles,Pot noodle,Rice,Basmati rice,Long grain rice,Microwave rice,Risotto rice,Couscous,Quinoa,Flour,Plain flour,Self raising flour,Bread flour,Cornflour,Sugar,Caster sugar,Granulated sugar,Icing sugar,Brown sugar,Baking powder,Bicarbonate of soda,Yeast,Vanilla extract,Cocoa powder,Chocolate chips,Sprinkles,Food colouring,Oil,Olive oil,Extra virgin olive oil,Vegetable oil,Sunflower oil,Rapeseed oil,Spray oil,Coconut oil,Vinegar,Balsamic vinegar,White wine vinegar,Malt vinegar,Salt,Sea salt,Pepper,Black pepper,Stock cubes,Chicken stock cubes,Beef stock cubes,Veg stock cubes,Gravy granules,Gravy,Tinned tomatoes,Chopped tomatoes,Plum tomatoes,Passata,Tomato puree,Baked beans,Beans,Kidney beans,Black beans,Butter beans,Chickpeas,Lentils,Red lentils,Tinned tuna,Tuna,Tinned salmon,Sardines,Tinned sweetcorn,Sweetcorn,Tinned soup,Soup,Coconut milk,Curry paste,Curry sauce,Korma sauce,Tikka masala sauce,Pasta sauce,Bolognese sauce,Pesto,Ketchup,Tomato ketchup,Mayonnaise,Mayo,Brown sauce,Mustard,English mustard,Dijon mustard,Salad cream,Soy sauce,Worcestershire sauce,Sweet chilli sauce,BBQ sauce,Hot sauce,Sriracha,Mint sauce,Horseradish,Cranberry sauce,Honey,Jam,Strawberry jam,Marmalade,Lemon curd,Peanut butter,Nutella,Chocolate spread,Marmite,Golden syrup,Maple syrup,Cereal,Cornflakes,Rice krispies,Coco pops,Shreddies,Bran flakes,Special k,Porridge oats,Porridge,Oats,Granola,Weetabix,Muesli,Tea bags,Tea,Green tea,Herbal tea,Coffee,Instant coffee,Ground coffee,Coffee beans,Coffee pods,Decaf coffee,Hot chocolate,Sweetener,Mixed herbs,Dried herbs,Oregano,Paprika,Smoked paprika,Cumin,Chilli powder,Chilli flakes,Curry powder,Garam masala,Turmeric,Cinnamon,Nutmeg,Garlic powder,Bay leaves,Spices,Custard powder,Jelly,Tinned fruit,Tinned peaches,Pineapple chunks,Rice pudding,Pickles,Gherkins,Pickled onions,Branston pickle,Chutney,Mango chutney,Capers,Stuffing,Stuffing mix,Breadcrumbs,Croutons,Poppadoms,Taco shells,Fajita kit,Fajita seasoning,Gravy browning,Desiccated coconut,Ground almonds,Condensed milk,Evaporated milk,Long life milk,UHT milk,Pasta bake sauce,Cup a soup,Super noodles',
+  'Snacks & treats':'Crisps,Multipack crisps,Walkers,Pringles,Tortilla chips,Doritos,Popcorn,Pretzels,Nuts,Peanuts,Cashews,Almonds,Mixed nuts,Biscuits,Digestives,Chocolate digestives,Rich tea,Hobnobs,Custard creams,Bourbons,Jaffa cakes,Cookies,Shortbread,Crackers,Cream crackers,Ritz,Rice cakes,Oatcakes,Breadsticks,Chocolate,Milk chocolate,Dark chocolate,Chocolate bars,Sweets,Haribo,Mints,Chewing gum,Cereal bars,Flapjacks,Protein bars,Dried fruit,Raisins,Dates,Cake bars,Mini rolls,Twiglets,Mini cheddars,Snack bars,Marshmallows',
+  'Drinks':'Water,Sparkling water,Bottled water,Still water,Squash,Orange squash,Blackcurrant squash,Ribena,Cordial,Cola,Coke,Diet coke,Coke zero,Pepsi,Lemonade,Fizzy drinks,Fanta,Sprite,Irn bru,Energy drinks,Red bull,Lucozade,Tonic water,Slimline tonic,Ginger beer,Ginger ale,Soda water,Juice cartons,Fruit shoots,Beer,Lager,Ale,Cider,Wine,Red wine,White wine,Rose wine,Prosecco,Champagne,Gin,Vodka,Whisky,Rum,Baileys,Alcohol free beer,Low alcohol wine,Mixers,Iced coffee,Milkshake',
+  'Household':'Toilet roll,Toilet paper,Kitchen roll,Tissues,Bin bags,Bin liners,Food bags,Sandwich bags,Freezer bags,Cling film,Tin foil,Foil,Baking paper,Greaseproof paper,Washing up liquid,Fairy liquid,Dishwasher tablets,Dishwasher salt,Rinse aid,Sponges,Scourers,Cloths,Dish cloths,Microfibre cloths,Washing powder,Washing liquid,Laundry detergent,Laundry pods,Washing pods,Fabric conditioner,Fabric softener,Stain remover,Bleach,Toilet cleaner,Toilet blocks,Surface spray,Antibacterial spray,Kitchen cleaner,Bathroom cleaner,Glass cleaner,Polish,Floor cleaner,Cleaning wipes,Antibacterial wipes,Air freshener,Plug in refill,Batteries,AA batteries,AAA batteries,Light bulbs,Matches,Lighter,Candles,Rubber gloves,Hand wash,Hand soap,Mop head,Dusters,Descaler,Drain unblocker,Oven cleaner,Limescale remover,Kitchen towel,Napkins,Paper plates,Party supplies,Birthday candles,Charcoal,Firelighters',
+  'Toiletries':'Shampoo,Conditioner,Dry shampoo,Shower gel,Body wash,Soap,Bubble bath,Bath bombs,Toothpaste,Toothbrush,Toothbrush heads,Mouthwash,Dental floss,Deodorant,Roll on deodorant,Antiperspirant,Moisturiser,Body lotion,Face cream,Sun cream,After sun,Razors,Razor blades,Shaving foam,Shaving gel,Cotton pads,Cotton wool,Cotton buds,Make up remover,Micellar water,Face wash,Face wipes,Hair gel,Hair wax,Hairspray,Hair ties,Hair dye,Sanitary towels,Pads,Tampons,Panty liners,Plasters,Paracetamol,Ibuprofen,Calpol,Vitamins,Vitamin d,Cold and flu tablets,Hay fever tablets,Antihistamines,Rennie,Gaviscon,Throat sweets,Lip balm,Vaseline,Hand cream,Nail varnish remover,Hand sanitiser,Contact lens solution,Eye drops,Condoms,Pregnancy test',
+  'Baby':'Nappies,Baby wipes,Formula milk,Baby formula,Baby food,Baby rice,Baby porridge,Pouches,Baby snacks,Rusks,Nappy cream,Sudocrem,Baby shampoo,Baby bath,Baby lotion,Nappy bags,Calpol sachets,Teething gel,Pull ups,Swim nappies',
+  'Pets':'Dog food,Dry dog food,Wet dog food,Dog treats,Dog biscuits,Dog chews,Cat food,Dry cat food,Wet cat food,Cat treats,Cat litter,Poo bags,Bird seed,Fish food,Rabbit food,Hamster food,Pet bedding,Flea treatment'
+};
+const STAPLES = ['Milk','Bread','Eggs','Butter','Bananas','Apples','Cheese','Chicken breasts','Potatoes','Onions','Tomatoes','Pasta','Rice','Yoghurt','Toilet roll','Tea bags','Coffee','Orange juice'];
 
 const ICON_TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
 const ICON_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>';
@@ -312,6 +359,20 @@ function isValid(s){
   return !!s && typeof s === 'object' && Array.isArray(s.shops) && Array.isArray(s.items)
     && !!s.history && typeof s.history === 'object';
 }
+const MAX_QTY = 99;
+const clampQty = q => { q = Math.round(Number(q)); return q >= 1 ? Math.min(q, MAX_QTY) : 1; };
+// "Chicken x4", "chicken x 4", "Chicken ×4", "4x chicken", "4 x chicken". Bare numbers ("2 litre milk") are left alone.
+function parseQty(raw){
+  const s = clean(raw);
+  // The x must stand apart from the word ("Chicken x4"), so "Weetabix 24" stays as typed. × and * can touch.
+  let m = s.match(/^(.*\S)\s+x\s*(\d{1,2})$/i) || s.match(/^(.*\S)\s*[×*]\s*(\d{1,2})$/);
+  if (m && clean(m[1]) && +m[2] > 0) return { name:clean(m[1]), qty:clampQty(m[2]) };
+  m = s.match(/^(\d{1,2})\s*[x×]\s*(\S.*)$/i);
+  if (m && +m[1] > 0) return { name:clean(m[2]), qty:clampQty(m[1]) };
+  return { name:s, qty:null };
+}
+const qtyLabel = q => q > 1 ? ` ×${q}` : '';
+
 function normalise(s){
   s.version = 1;
   s.removed = Array.isArray(s.removed) ? s.removed : [];
@@ -330,6 +391,13 @@ function normalise(s){
     if (i.sectionId === undefined) i.sectionId = null;
     i.done = !!i.done;
     if (typeof i.order !== 'number') i.order = 0;
+    i.qty = clampQty(i.qty);
+  });
+  Object.keys(s.history).forEach(k => {
+    const h = s.history[k];
+    if (!h || typeof h !== 'object' || !h.name) { delete s.history[k]; return; }
+    if (!Array.isArray(h.buys)) h.buys = [];
+    if (typeof h.count !== 'number') h.count = 0;
   });
   if (s.tab !== 'list' && !shopIds.has(s.tab)) s.tab = 'list';
   return s;
@@ -394,6 +462,46 @@ function nextOrder(shopId){
 function sectionOf(shop, sectionId){
   return shop ? shop.sections.find(s => s.id === sectionId) || null : null;
 }
+/* ---------- Catalogue lookups ---------- */
+// fold: lower case, no accents, single spaces, so "Crème Fraîche" matches "creme fraiche"
+const fold = s => key(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9& ]/g, '').replace(/\s+/g, ' ').trim();
+const CAT_INDEX = new Map();   // folded name -> section name
+const CAT_LIST = [];           // [{ name, f, cat }]
+Object.entries(CATALOG).forEach(([cat, list]) => list.split(',').forEach(n => {
+  const name = n.trim(); const f = fold(name);
+  if (name && !CAT_INDEX.has(f)) { CAT_INDEX.set(f, cat); CAT_LIST.push({ name, f, cat }); }
+}));
+// Best guess at which standard section an item belongs to, or null if unknown.
+function categoryFor(name){
+  const f = fold(name);
+  if (!f) return null;
+  if (CAT_INDEX.has(f)) return CAT_INDEX.get(f);
+  for (const v of [f.replace(/es$/, ''), f.replace(/s$/, ''), f + 's', f + 'es']) {
+    if (CAT_INDEX.has(v)) return CAT_INDEX.get(v);
+  }
+  // Whole-word match on the longest catalogue name inside it, e.g. "semi skimmed milk 4 pints" -> Milk
+  const padded = ` ${f} `;
+  let best = null;
+  for (const c of CAT_LIST) {
+    if (padded.includes(` ${c.f} `) && (!best || c.f.length > best.f.length)) best = c;
+  }
+  return best ? best.cat : null;
+}
+// The shop's own section for a standard section name, allowing for renamed sections.
+function sectionForCategory(shop, cat){
+  if (!shop || !cat) return null;
+  const names = new Set([fold(cat), ...(SECTION_ALIASES[cat] || []).map(fold)]);
+  const sec = shop.sections.find(s => names.has(fold(s.name)));
+  return sec ? sec.id : null;
+}
+// Where an item should go in a shop: her own filing first, then the catalogue's guess.
+function placeFor(name, shop){
+  if (!shop) return null;
+  const h = state.history[key(name)];
+  if (h && h.shopId === shop.id && sectionOf(shop, h.sectionId)) return h.sectionId;
+  return sectionForCategory(shop, categoryFor(name));
+}
+
 function usualShop(name){
   const h = state.history[key(name)];
   return h && h.shopId ? shopById(h.shopId) : null;
@@ -412,6 +520,42 @@ function touchHistory(name, place){
       .slice(0, keys.length - MAX_HISTORY).forEach(x => delete state.history[x]);
   }
 }
+function histFor(name){
+  const k = key(name);
+  if (!state.history[k]) state.history[k] = { name, count:0, lastAt:null, shopId:null, sectionId:null, buys:[] };
+  if (!Array.isArray(state.history[k].buys)) state.history[k].buys = [];
+  return state.history[k];
+}
+const DAY = 864e5;
+// Purchase pattern: trips (ticks within 12 hours count once) and the typical gap between them.
+function buyStats(h){
+  const trips = [];
+  (h && h.buys || []).slice().sort((a, b) => a - b).forEach(t => {
+    if (!trips.length || t - trips[trips.length - 1] > 12 * 3600e3) trips.push(t);
+  });
+  const last = trips.length ? trips[trips.length - 1] : null;
+  if (trips.length < 2) return { n:trips.length, last, every:null };
+  const gaps = [];
+  for (let i = 1; i < trips.length; i++) gaps.push(trips[i] - trips[i - 1]);
+  const g = gaps.slice(-5).sort((a, b) => a - b);
+  const every = g[Math.floor(g.length / 2)];
+  return { n:trips.length, last, every: every >= DAY ? every : null };
+}
+const fmtGap = ms => { const d = Math.round(ms / DAY); return d >= 14 ? `${Math.round(d / 7)} weeks` : `${d} ${d === 1 ? 'day' : 'days'}`; };
+// Items bought regularly that are due again and not already on a list.
+function dueItems(shopId){
+  if (state.dueHiddenUntil && Date.now() < state.dueHiddenUntil) return [];
+  const waiting = new Set(state.items.filter(i => !i.done).map(i => key(i.name)));
+  const now = Date.now();
+  return Object.entries(state.history)
+    .filter(([k, h]) => !waiting.has(k) && (!shopId || h.shopId === shopId))
+    .map(([k, h]) => ({ h, st:buyStats(h) }))
+    .filter(x => x.st.every && now - x.st.last >= x.st.every * 0.85)
+    .sort((a, b) => ((now - b.st.last) / b.st.every) - ((now - a.st.last) / a.st.every))
+    .slice(0, 12)
+    .map(x => x.h);
+}
+
 function rememberPlace(item){
   if (!item.shopId) return;
   const k = key(item.name);
@@ -421,32 +565,45 @@ function rememberPlace(item){
 }
 
 /* ---------- Actions ---------- */
-function addItem(raw){
-  const name = clean(raw);
+// opts.qty: quantity to use when the text has none. opts.quiet: no render/save/toast (for batch adds).
+function addItem(raw, opts){
+  opts = opts || {};
+  const parsed = parseQty(raw);
+  const name = parsed.name;
   if (!name) return false;
+  const qty = parsed.qty || (opts.qty ? clampQty(opts.qty) : null);
   const k = key(name);
   const shopId = tabShopId();
   const same = state.items.find(i => key(i.name) === k && i.shopId === shopId);
   if (same) {
     if (same.done) {
       same.done = false; same.doneAt = null; same.updatedAt = Date.now();
+      if (qty) same.qty = qty;
       touchHistory(same.name);
+      if (opts.quiet) return true;
       save(); render(); flash(same.id);
-      toast(`${same.name} is back on the list`);
-    } else {
+      toast(`${same.name}${qtyLabel(same.qty)} is back on the list`);
+    } else if (qty && qty !== same.qty) {
+      if (!opts.quiet) snapshot();
+      same.qty = qty; same.updatedAt = Date.now();
+      histFor(same.name).qty = qty;
+      if (opts.quiet) return true;
+      save(); render(); flash(same.id);
+      toast(`${same.name} is now ×${qty}`, true);
+    } else if (!opts.quiet) {
       flash(same.id);
       toast(`${same.name} is already on the list`);
     }
     return true;
   }
   const shop = shopById(shopId);
-  const h = state.history[k];
-  let sectionId = null;
-  if (shop && h && h.shopId === shopId && sectionOf(shop, h.sectionId)) sectionId = h.sectionId;
-  const item = { id:uid(), name, shopId, sectionId, done:false, doneAt:null,
+  const sectionId = placeFor(name, shop);
+  const item = { id:uid(), name, qty: qty || 1, shopId, sectionId, done:false, doneAt:null,
     order:nextOrder(shopId), addedAt:Date.now(), updatedAt:Date.now() };
   state.items.push(item);
   touchHistory(name, shop ? { shopId, sectionId } : null);
+  if (parsed.qty) histFor(name).qty = parsed.qty;
+  if (opts.quiet) return true;
   save(); render(); flash(item.id);
   const elsewhere = state.items.find(i => i !== item && key(i.name) === k && !i.done);
   if (elsewhere) {
@@ -454,6 +611,24 @@ function addItem(raw){
     toast(`Also on ${s ? s.name : 'your list'}`);
   }
   return true;
+}
+// The quantity she last used for an item, for one-tap adds.
+const usualQty = name => { const h = state.history[key(name)]; return h && h.qty > 1 ? h.qty : null; };
+
+function setQty(id, q){
+  const it = itemById(id); if (!it) return;
+  it.qty = clampQty(q); it.updatedAt = Date.now();
+  histFor(it.name).qty = it.qty;
+  save(); render();
+}
+
+function addDue(names){
+  if (!names.length) return;
+  snapshot();
+  let n = 0;
+  names.forEach(nm => { if (addItem(nm, { qty:usualQty(nm), quiet:true })) n++; });
+  save(); render();
+  toast(`Added ${n} ${n === 1 ? 'item' : 'items'}`, true);
 }
 
 const ticking = new Set();
@@ -463,7 +638,16 @@ function toggleDone(id){
   const apply = () => {
     ticking.delete(id);
     const cur = itemById(id); if (!cur) return;
-    cur.done = !cur.done; cur.doneAt = cur.done ? Date.now() : null; cur.updatedAt = Date.now();
+    const h = histFor(cur.name);
+    if (!cur.done) {
+      cur.done = true; cur.doneAt = Date.now();
+      h.buys.push(cur.doneAt);                         // record a purchase
+      if (h.buys.length > 15) h.buys = h.buys.slice(-15);
+    } else {
+      h.buys = h.buys.filter(t => t !== cur.doneAt);   // unticked by mistake: undo that purchase
+      cur.done = false; cur.doneAt = null;
+    }
+    cur.updatedAt = Date.now();
     save(); render();
   };
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -485,15 +669,16 @@ function moveItem(id, shopId){
   const it = itemById(id); if (!it) return;
   snapshot();
   const target = shopById(shopId);
-  if (dupIn(it, target ? target.id : null)) {
+  const dup = dupIn(it, target ? target.id : null);
+  if (dup) {
+    dup.qty = Math.max(dup.qty || 1, it.qty || 1);
     state.items = state.items.filter(i => i !== it);
     save(); render();
     toast(`${it.name} was already on ${target ? target.name : 'your list'}`, true);
     return;
   }
-  const h = state.history[key(it.name)];
   it.shopId = target ? target.id : null;
-  it.sectionId = (target && h && h.shopId === target.id && sectionOf(target, h.sectionId)) ? h.sectionId : null;
+  it.sectionId = placeFor(it.name, target);
   it.order = nextOrder(it.shopId);
   it.updatedAt = Date.now();
   rememberPlace(it);
@@ -552,9 +737,9 @@ function restoreRemoved(rid){
   snapshot();
   const r = state.removed.splice(idx, 1)[0];
   const shop = shopById(r.shopId);
-  const it = { id: itemById(r.id) ? uid() : r.id, name:r.name,
+  const it = { id: itemById(r.id) ? uid() : r.id, name:r.name, qty:clampQty(r.qty),
     shopId: shop ? shop.id : null,
-    sectionId: shop && sectionOf(shop, r.sectionId) ? r.sectionId : null,
+    sectionId: shop && sectionOf(shop, r.sectionId) ? r.sectionId : placeFor(r.name, shop),
     done:false, doneAt:null, order:nextOrder(shop ? shop.id : null), addedAt:r.addedAt || Date.now(), updatedAt:Date.now() };
   state.items.push(it);
   save(); render();
@@ -573,7 +758,7 @@ function sortAll(){
     const shop = shopById(h.shopId);
     if (dupIn(it, shop.id)) { state.items = state.items.filter(i => i !== it); return; }
     it.shopId = shop.id;
-    it.sectionId = sectionOf(shop, h.sectionId) ? h.sectionId : null;
+    it.sectionId = placeFor(it.name, shop);
     it.order = nextOrder(shop.id);
     it.updatedAt = Date.now();
   });
@@ -588,7 +773,7 @@ function addShop(raw){
   if (existing) return existing;
   const used = new Set(state.shops.map(s => s.color));
   const color = PALETTE.find(c => !used.has(c)) || PALETTE[state.shops.length % PALETTE.length];
-  const shop = { id:uid(), name, color, sections:[] };
+  const shop = { id:uid(), name, color, sections: STANDARD_SECTIONS.map(n => ({ id:uid(), name:n })) };
   state.shops.push(shop);
   return shop;
 }
@@ -633,7 +818,7 @@ function render(){
   const color = shop ? shop.color : LIST_COLOR;
   document.documentElement.style.setProperty('--accent', color);
   $('meta[name="theme-color"]').setAttribute('content', color);
-  renderTabs(); renderHeader(); renderList(); renderSuggest(); renderBadge();
+  renderTabs(); renderHeader(); renderList(); renderSuggest(); renderDue(); renderBadge();
 }
 
 function renderTabs(){
@@ -673,7 +858,7 @@ function itemRow(i, opts){
   }
   return `<li class="row item${done ? ' done' : ' sortable'}" data-id="${esc(i.id)}" tabindex="0" role="checkbox" aria-checked="${done}">`
     + `<span class="check" aria-hidden="true">${ICON_TICK}</span>`
-    + `<span class="name">${esc(i.name)}</span>${hint}`
+    + `<span class="name">${esc(i.name)}${i.qty > 1 ? ` <span class="qty">×${i.qty}</span>` : ''}</span>${hint}`
     + (done ? '' : `<span class="grip" aria-hidden="true">${ICON_GRIP}</span>`)
     + '</li>';
 }
@@ -727,37 +912,64 @@ function renderList(){
 
 function renderSuggest(){
   if (document.activeElement !== addInput) { suggestEl.hidden = true; suggestEl.innerHTML = ''; return; }
-  const q = key(addInput.value);
+  const q = fold(addInput.value);
   const shopId = tabShopId();
   const shop = currentShop();
-  const onTab = new Set(tabItems().filter(i => !i.done).map(i => key(i.name)));
-  let entries = Object.entries(state.history).filter(([k]) => !onTab.has(k));
+  const onTab = new Set(tabItems().filter(i => !i.done).map(i => fold(i.name)));
+  const hist = Object.entries(state.history).filter(([k]) => !onTab.has(fold(k)));
   const local = h => (shopId && h.shopId === shopId) ? 1 : 0;
+  const score = f => f.startsWith(q) ? 3 : (f.includes(' ' + q) ? 2 : (f.includes(q) ? 1 : 0));
   let html = '';
   if (q) {
-    entries = entries
-      .map(([k, h]) => [k, h, k.startsWith(q) ? 2 : (k.includes(q) ? 1 : 0)])
-      .filter(e => e[2] > 0)
-      .sort((a, b) => (b[2] - a[2]) || (local(b[1]) - local(a[1])) || (b[1].count - a[1].count))
-      .slice(0, 6);
-    html = entries.map(([k, h]) => {
-      const us = !shop && h.shopId ? shopById(h.shopId) : null;
-      return `<div class="sug-row"><button type="button" class="sug-add" data-add="${esc(h.name)}"><span>${esc(h.name)}</span>`
-        + (us ? `<span class="hint" style="--c:${us.color}">${esc(us.name)}</span>` : '')
-        + `</button><button type="button" class="sug-forget" data-forget="${esc(k)}" aria-label="Stop suggesting ${esc(h.name)}">${ICON_X}</button></div>`;
+    // Things she has added before rank above the built-in catalogue.
+    const seen = new Set();
+    const mine = hist.map(([k, h]) => ({ k, h, f:fold(h.name), s:score(fold(h.name)) + 0.5 }))
+      .filter(e => e.s > 0.5);
+    mine.forEach(e => seen.add(e.f));
+    const cat = CAT_LIST.filter(c => !seen.has(c.f) && !onTab.has(c.f))
+      .map(c => ({ c, f:c.f, s:score(c.f) })).filter(e => e.s > 0);
+    const rows = mine.concat(cat).sort((a, b) =>
+      (b.s - a.s) || ((b.h ? local(b.h) : 0) - (a.h ? local(a.h) : 0)) ||
+      ((b.h ? b.h.count : 0) - (a.h ? a.h.count : 0)) || (a.f.length - b.f.length)
+    ).slice(0, 7);
+    html = rows.map(r => {
+      if (r.h) {
+        const us = !shop && r.h.shopId ? shopById(r.h.shopId) : null;
+        return `<div class="sug-row"><button type="button" class="sug-add" data-add="${esc(r.h.name)}"><span>${esc(r.h.name)}</span>`
+          + (us ? `<span class="hint" style="--c:${us.color}">${esc(us.name)}</span>` : '')
+          + `</button><button type="button" class="sug-forget" data-forget="${esc(r.k)}" aria-label="Stop suggesting ${esc(r.h.name)}">${ICON_X}</button></div>`;
+      }
+      return `<div class="sug-row"><button type="button" class="sug-add" data-add="${esc(r.c.name)}"><span>${esc(r.c.name)}</span><span class="cat">${esc(r.c.cat)}</span></button></div>`;
     }).join('');
   } else {
-    entries = entries
+    const picks = hist
       .sort((a, b) => (local(b[1]) - local(a[1])) || (b[1].count - a[1].count) || ((b[1].lastAt || 0) - (a[1].lastAt || 0)))
-      .slice(0, 12);
-    if (entries.length) {
-      html = '<p class="sug-label">Add again</p><div class="chips">'
-        + entries.map(([k, h]) => `<button type="button" class="chip" data-add="${esc(h.name)}">${esc(h.name)}</button>`).join('')
+      .slice(0, 12).map(([, h]) => h.name);
+    const have = new Set(picks.map(fold));
+    STAPLES.forEach(n => { if (picks.length < 12 && !have.has(fold(n)) && !onTab.has(fold(n))) { picks.push(n); have.add(fold(n)); } });
+    if (picks.length) {
+      html = '<p class="sug-label">Quick add</p><div class="chips">'
+        + picks.map(n => `<button type="button" class="chip" data-add="${esc(n)}">${esc(n)}${qtyLabel(usualQty(n) || 1)}</button>`).join('')
         + '</div>';
     }
   }
   suggestEl.innerHTML = html;
   suggestEl.hidden = !html;
+  renderDue();
+}
+
+function renderDue(){
+  const el = $('#dueBar');
+  const due = suggestEl.hidden ? dueItems(tabShopId()) : [];
+  if (!due.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<section class="due" aria-label="Due again">'
+    + '<div class="due-head"><span>Due again</span><button type="button" class="due-skip" data-act="dueHide">Not today</button></div>'
+    + '<div class="chips">' + due.map(h => {
+        const st = buyStats(h);
+        return `<button type="button" class="chip" data-act="dueOne" data-name="${esc(h.name)}" title="Usually every ${esc(fmtGap(st.every))}">${esc(h.name)}${qtyLabel(usualQty(h.name) || 1)}</button>`;
+      }).join('') + '</div>'
+    + (due.length > 1 ? `<button type="button" class="btn primary due-all" data-act="dueAll">Add all ${due.length}</button>` : '')
+    + '</section>';
 }
 
 function renderBadge(){
@@ -841,11 +1053,16 @@ listEl.addEventListener('pointerdown', e => {
   const grip = e.target.closest('.grip'); if (!grip || drag) return;
   const row = grip.closest('.row'); if (!row) return;
   e.preventDefault();
+  // Show empty sections as drop targets. That pushes rows down, so offset the start
+  // point to keep the dragged row under her finger.
+  const before = row.getBoundingClientRect().top;
+  document.body.classList.add('is-dragging');
+  const shiftY = row.getBoundingClientRect().top - before;
   const rows = [...listEl.querySelectorAll('.row.sortable')];
   const idx = rows.indexOf(row);
   const sy = window.scrollY;
   const m = rows.map(r => { const b = r.getBoundingClientRect(); return { top:b.top + sy, h:b.height }; });
-  drag = { grip, row, rows, idx, m, startY:e.clientY + sy, clientY:e.clientY, target:idx, pid:e.pointerId, raf:0 };
+  drag = { grip, row, rows, idx, m, startY:e.clientY + sy + shiftY, clientY:e.clientY, target:idx, pid:e.pointerId, raf:0 };
   try { grip.setPointerCapture(e.pointerId); } catch(_) {}
   row.classList.add('dragging');
   document.body.classList.add('is-dragging');
@@ -862,28 +1079,31 @@ listEl.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag
 function dragUpdate(){
   const d = drag;
   const mi = d.m[d.idx];
-  const first = d.m[0], last = d.m[d.m.length - 1];
-  let dy = d.clientY + window.scrollY - d.startY;
-  // Let the dragged row's centre travel the full list, so it can drop below a short last heading.
+  const y0 = d.m[0].top, last = d.m[d.m.length - 1];
   const mid = mi.top + mi.h / 2;
-  dy = Math.max(first.top - mid, Math.min(dy, (last.top + last.h) - mid));
+  let dy = d.clientY + window.scrollY - d.startY;
+  dy = Math.max(y0 - mid, Math.min(dy, (last.top + last.h) - mid));
   d.row.style.transform = `translateY(${dy}px)`;
-  const center = mi.top + mi.h / 2 + dy;
-  let t = d.idx;
-  for (let i = 0; i < d.rows.length; i++) {
-    if (i === d.idx) continue;
-    const c = d.m[i].top + d.m[i].h / 2;
-    if (i < d.idx && center < c) t = Math.min(t, i);
-    if (i > d.idx && center > c) t = Math.max(t, i);
+  const center = mid + dy;
+  // Rows other than the dragged one, in order. Pick the gap (slot) whose centre is nearest
+  // the dragged row, using real row heights, so the drop matches the gap she can see.
+  const others = [];
+  for (let i = 0; i < d.rows.length; i++) if (i !== d.idx) others.push(i);
+  let best = 0, bestDist = Infinity, acc = y0;
+  for (let k = 0; k <= others.length; k++) {
+    const dist = Math.abs(center - (acc + mi.h / 2));
+    if (dist < bestDist) { bestDist = dist; best = k; }
+    if (k < others.length) acc += d.m[others[k]].h;
   }
-  d.target = t;
-  d.rows.forEach((r, i) => {
-    if (i === d.idx) return;
-    let shift = 0;
-    if (i < d.idx && i >= t) shift = mi.h;
-    else if (i > d.idx && i <= t) shift = -mi.h;
-    r.style.transform = shift ? `translateY(${shift}px)` : '';
+  // Slide the other rows to open that gap.
+  let y = y0;
+  others.forEach((ri, pos) => {
+    if (pos === best) y += mi.h;
+    const shift = y - d.m[ri].top;
+    d.rows[ri].style.transform = shift ? `translateY(${shift}px)` : '';
+    y += d.m[ri].h;
   });
+  d.target = best; // position among the other rows
 }
 function autoScroll(){
   if (!drag) return;
@@ -929,7 +1149,7 @@ suggestEl.addEventListener('mousedown', e => e.preventDefault());
 suggestEl.addEventListener('click', e => {
   const add = e.target.closest('[data-add]');
   const forget = e.target.closest('[data-forget]');
-  if (add) { addItem(add.dataset.add); addInput.value = ''; renderSuggest(); }
+  if (add) { addItem(add.dataset.add, { qty:usualQty(add.dataset.add) }); addInput.value = ''; renderSuggest(); }
   else if (forget) { delete state.history[forget.dataset.forget]; save(); renderSuggest(); }
 });
 
@@ -940,6 +1160,12 @@ document.addEventListener('click', e => {
   if (b.dataset.act === 'clearTicked') clearTicked();
   else if (b.dataset.act === 'sortAll') sortAll();
   else if (b.dataset.act === 'addShop') openAddShop({});
+  else if (b.dataset.act === 'dueOne') { const n = b.dataset.name; addItem(n, { qty:usualQty(n) }); }
+  else if (b.dataset.act === 'dueAll') addDue(dueItems(tabShopId()).map(h => h.name));
+  else if (b.dataset.act === 'dueHide') {
+    const t = new Date(); t.setHours(24, 0, 0, 0);   // hide until midnight
+    state.dueHiddenUntil = t.getTime(); save(); renderDue();
+  }
 });
 $('#btnShare').addEventListener('click', shareList);
 $('#btnShop').addEventListener('click', () => { const s = currentShop(); if (s) openShopSheet(s.id); });
@@ -951,13 +1177,13 @@ function shopLines(shop, items){
   const undone = items.filter(i => !i.done).sort((a, b) => a.order - b.order);
   if (shop && shop.sections.length) {
     const secIds = new Set(shop.sections.map(s => s.id));
-    undone.filter(i => !secIds.has(i.sectionId)).forEach(i => lines.push(`- ${i.name}`));
+    undone.filter(i => !secIds.has(i.sectionId)).forEach(i => lines.push(`- ${i.name}${qtyLabel(i.qty)}`));
     shop.sections.forEach(s => {
       const inSec = undone.filter(i => i.sectionId === s.id);
-      if (inSec.length) { lines.push('', s.name); inSec.forEach(i => lines.push(`- ${i.name}`)); }
+      if (inSec.length) { lines.push('', s.name); inSec.forEach(i => lines.push(`- ${i.name}${qtyLabel(i.qty)}`)); }
     });
   } else {
-    undone.forEach(i => lines.push(`- ${i.name}`));
+    undone.forEach(i => lines.push(`- ${i.name}${qtyLabel(i.qty)}`));
   }
   return lines;
 }
@@ -1018,6 +1244,17 @@ function destBtn(id, name, color, usual){
     + `<span class="ddot"></span><span class="dn">${esc(name)}</span>${usual ? '<small>Usual</small>' : ''}</button>`;
 }
 
+function statsLine(it){
+  const h = state.history[key(it.name)];
+  if (!h) return '';
+  const st = buyStats(h);
+  const parts = [];
+  if (st.n) parts.push(`Bought ${st.n} ${st.n === 1 ? 'time' : 'times'}${st.every ? `, about every ${fmtGap(st.every)}` : ''}, last ${ago(st.last).toLowerCase()}`);
+  else parts.push('Not bought yet');
+  if (h.count) parts.push(`added ${h.count} ${h.count === 1 ? 'time' : 'times'}, last ${ago(h.lastAt).toLowerCase()}`);
+  return `<p class="note stats">${esc(parts.join('. ').replace('. added', '. Added'))}.</p>`;
+}
+
 function openItemSheet(id){
   const it = itemById(id); if (!it) return;
   if (document.activeElement === addInput) addInput.blur();
@@ -1038,6 +1275,11 @@ function openItemSheet(id){
   }
   openSheet(
     `<h2>${esc(it.name)}</h2><p class="sub">${esc(where)}</p>`
+    + `<div class="qtyrow"><span>Quantity</span><div class="stepper">`
+    + `<button type="button" class="step" data-act="qtyDown" aria-label="Fewer" ${it.qty <= 1 ? 'disabled' : ''}>−</button>`
+    + `<output aria-live="polite">${it.qty || 1}</output>`
+    + `<button type="button" class="step" data-act="qtyUp" aria-label="More" ${it.qty >= MAX_QTY ? 'disabled' : ''}>+</button></div></div>`
+    + statsLine(it)
     + `<h3 class="sh-label">${shop ? 'Move to' : 'Send to'}</h3><div class="dest">${dests.join('')}</div>`
     + secHtml
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameItem">Rename</button>'
@@ -1108,7 +1350,8 @@ function openShopSheet(id){
         + `<button type="button" class="mini" data-act="secDown" data-sec="${esc(sec.id)}" ${i === n - 1 ? 'disabled' : ''} aria-label="Move ${esc(sec.name)} down">${ICON_DOWN}</button>`
         + `<button type="button" class="mini" data-act="secRename" data-sec="${esc(sec.id)}" aria-label="Rename ${esc(sec.name)}">${ICON_PEN}</button>`
         + `<button type="button" class="mini" data-act="secDelete" data-sec="${esc(sec.id)}" aria-label="Delete ${esc(sec.name)}">${ICON_X}</button></div>`).join('')
-    : '<p class="note">Sections group items by aisle, in the order you walk round the shop. Drag items under a section heading to file them.</p>';
+    : '<p class="note">Sections group items by aisle, in the order you walk round the shop. Items file themselves into the right one.</p>'
+      + '<button type="button" class="btn primary wide" data-act="addStandard">Add standard sections</button>';
   openSheet(
     `<h2>${esc(s.name)}</h2><p class="sub">Shop settings</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameShop">Rename shop</button></div>'
@@ -1177,6 +1420,15 @@ sheet.addEventListener('click', e => {
     case 'renameItem':
       if (item) openPrompt({ title:'Rename item', value:item.name, onSave: v => renameItem(item.id, v) });
       break;
+    case 'qtyUp': case 'qtyDown': {
+      if (!item) break;
+      setQty(item.id, (item.qty || 1) + (act === 'qtyUp' ? 1 : -1));
+      const q = itemById(item.id).qty;
+      sheet.querySelector('.stepper output').textContent = q;
+      sheet.querySelector('[data-act="qtyDown"]').disabled = q <= 1;
+      sheet.querySelector('[data-act="qtyUp"]').disabled = q >= MAX_QTY;
+      break;
+    }
     case 'removeItem':
       if (item) { removeItem(item.id); closeSheet(); }
       break;
@@ -1192,6 +1444,18 @@ sheet.addEventListener('click', e => {
     case 'setColor':
       if (shop) { shop.color = b.dataset.color; save(); render(); openShopSheet(shop.id); }
       break;
+    case 'addStandard': {
+      if (!shop) break;
+      snapshot();
+      STANDARD_SECTIONS.forEach(n => addSection(shop.id, n));
+      let filed = 0;
+      itemsIn(shop.id).forEach(i => {
+        if (!sectionOf(shop, i.sectionId)) { i.sectionId = placeFor(i.name, shop); if (i.sectionId) filed++; }
+      });
+      save(); render(); openShopSheet(shop.id);
+      toast(filed ? `Added sections and filed ${filed} ${filed === 1 ? 'item' : 'items'}` : 'Added sections', true);
+      break;
+    }
     case 'addSection':
       if (shop) openSectionPrompt(shop.id, null, true);
       break;

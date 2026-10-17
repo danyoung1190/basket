@@ -19,9 +19,12 @@ It needs an https web address so the iPhone can install it and use it offline. G
 
 ## How she uses it
 
-- **Add**: type in the box, or tap a suggestion. Items she has added before are suggested as she types.
+- **Add**: type in the box, or tap a suggestion. Around 780 common UK groceries are built in, so suggestions appear from the first letters. Things she adds herself rank first.
+- **Quantities**: type "Chicken x4" or "4x chicken", or hold an item and use − / +. Tapping a suggestion reuses the quantity she last used.
+- **Sections**: new shops come with Fruit & veg, Bakery, Meat & fish, Fridge, Freezer, Cupboard and others. Items file themselves into the right one. If she moves something, that choice is remembered over the built-in guess. Empty sections stay hidden until she drags an item.
+- **Due again**: each tick-off is recorded as a purchase. Once something has been bought twice or more, the app learns how often she buys it and shows it under "Due again" when it's due. Holding an item shows its history, for example "Bought 5 times, about every 7 days".
 - **Send to a shop**: hold an item, then tap a shop. "Send N to their usual shops" sorts everything she has sent somewhere before.
-- **Reorder**: drag the handle on the right of an item. Drag it under a section heading, such as Dairy & eggs, to file it there.
+- **Reorder**: drag the handle on the right of an item. Drag it under a section heading, such as Fridge, to file it there.
 - **Tick off**: tap an item. Ticked items go grey at the bottom. Tap **Clear** when she has finished shopping.
 - **Shop settings** (the ... button, or hold a shop's tab): rename it, change its colour, and add sections in the order she walks round the shop.
 - **Share**: the share button sends the list as text, for example to WhatsApp.
