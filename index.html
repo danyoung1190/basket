@@ -182,6 +182,8 @@ textarea.field{height:auto; padding:10px 14px; resize:none; width:100%; margin-t
 .steps{margin:14px 0 0; padding-left:22px; font-size:15px; line-height:1.45}
 .steps li + li{margin-top:6px}
 .err{color:var(--danger)}
+.bigcode{margin:16px 0 0; text-align:center; font:700 22px/1.3 ui-monospace, Menlo, monospace; letter-spacing:.04em; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text}
+input.field.code{width:100%; margin-top:14px; font:600 18px ui-monospace, Menlo, monospace; text-transform:uppercase}
 .sug-add .cat{margin-left:auto; font-size:13px; color:var(--muted)}
 
 .row.dragging{z-index:5; background:var(--surface); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.2); transition:none}
@@ -332,11 +334,12 @@ label.btn{cursor:pointer}
 </div>
 
 <script src="qrcode.js"></script>
+<script src="firebase-config.js"></script>
 <script>
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -429,11 +432,7 @@ function normalise(s){
     if (!Array.isArray(sh.sections)) sh.sections = [];
     sh.sections = sh.sections.filter(x => x && x.id && x.name);
     if (!sh.color) sh.color = PALETTE[i % PALETTE.length];
-    if (sh.shared) {
-      const x = sh.shared;
-      if (!x.owner || !x.repo || !x.listId || !x.token) delete sh.shared;
-      else if (!Array.isArray(x.tombstones)) x.tombstones = [];
-    }
+    if (sh.shared && !(sh.shared.fb && typeof sh.shared.listId === 'string' && sh.shared.listId.length === 16)) delete sh.shared;
   });
   const shopIds = new Set(s.shops.map(sh => sh.id));
   s.items = s.items.filter(i => i && i.id && i.name);
@@ -1036,7 +1035,7 @@ function renderDue(){
 
 function renderBadge(){
   const stale = !state.lastBackupAt || (Date.now() - state.lastBackupAt) > 30 * 864e5;
-  $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof tokenWarning === 'function' && tokenWarning()));
+  $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof sharingWarning === 'function' && sharingWarning()));
 }
 
 function flash(id){
@@ -1426,7 +1425,8 @@ function runPrompt(v){
   if (!name) return;
   const before = sheetCtx, cb = promptCb;
   promptCb = null;
-  if (cb) cb(name);
+  const r = cb ? cb(name) : null;
+  if (r && typeof r.then === 'function') return; // an async flow opens its own next sheet
   if (sheetCtx === before) closeSheet();
 }
 
@@ -1511,7 +1511,7 @@ function openSettings(){
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="backup">Back up now</button>'
     + '<label class="btn">Restore<input type="file" id="restoreInput" accept=".json,application/json" hidden></label></div>'
     + '<h3 class="sh-label">Sharing</h3>'
-    + (tokenWarning() ? '<p class="note err">A shared list needs attention: its access token has expired or is about to.</p>' : '')
+    + (sharingWarning() ? '<p class="note err">Sharing needs attention. Open Shared lists for details.</p>' : '')
     + `<button type="button" class="btn wide" style="margin-top:0" data-act="shareHub">Shared lists${sharedShops().length ? ` (${sharedShops().length})` : ''}</button>`
     + `<h3 class="sh-label">Recently removed and cleared</h3>${remHtml}`
     + `<p class="ver">Basket ${APP_VERSION}</p>`,
@@ -1523,27 +1523,15 @@ sheet.addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target, kind = form.dataset.form;
   if (kind === 'prompt') { runPrompt(form.querySelector('input').value); return; }
-  if (kind !== 'create' && kind !== 'join') return;
+  if (kind !== 'join') return;
   form.querySelectorAll('button').forEach(b => b.disabled = true);
   form.querySelector('.err').hidden = true;
   try {
-    if (kind === 'create') {
-      const f = new FormData(form);
-      const shop = await createSharedList({ name:clean(f.get('name')) || 'Home', token:String(f.get('token')).trim(), repoName:String(f.get('repo')).trim() });
-      openShowCode(shop.id);
-      toast(`${shop.name} is ready to share`);
-    } else {
-      const r = await joinSharedList(form.querySelector('textarea').value);
-      closeSheet();
-      toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
-    }
+    const r = await joinSharedList(form.querySelector('input.code').value);
+    closeSheet();
+    toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
   } catch(err) {
-    let msg = err.message || 'Something went wrong.';
-    if (err.status === 401) msg = 'GitHub rejected the token. Check it was copied in full.';
-    else if (err.status === 404) msg = kind === 'create' ? 'Repository not found. Check the name, and that the token was given access to it.' : 'That list was not found. Ask for a fresh code.';
-    else if (err.status === 403) msg = 'The token is not allowed to do this. It needs Contents: Read and write on that repository.';
-    else if (err.status === 0) msg = 'No signal. Try again when you are online.';
-    showFormError(form, msg);
+    showFormError(form, fbErrorText(err));
   }
 });
 
@@ -1666,28 +1654,19 @@ sheet.addEventListener('click', e => {
     case 'createStart': openCreateShared(); break;
     case 'joinStart': openJoinShared(''); break;
     case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
-    case 'updateToken': {
-      const s2 = shopById(b.dataset.shop); if (!isShared(s2)) break;
-      openPrompt({ title:'New access token', sub:`For ${s2.name}. Other phones pick it up automatically.`, placeholder:'github_pat_...', button:'Save', onSave: v => {
-        s2.shared.token = v.trim(); s2.shared.tokenAt = Date.now(); s2.shared.expiresAt = null; s2.shared.lastError = null;
-        save(); render(); schedulePush(0); openShareHub();
-      }});
-      break;
-    }
     case 'pasteCode': {
-      const ta = sheet.querySelector('textarea');
+      const ta = sheet.querySelector('input.code');
       if (navigator.clipboard && navigator.clipboard.readText) {
         navigator.clipboard.readText().then(t => { if (t) ta.value = t; ta.focus(); }, () => { ta.focus(); toast('Hold the box and choose Paste'); });
       } else { ta.focus(); toast('Hold the box and choose Paste'); }
       break;
     }
-    case 'copyCode': {
-      const ta = sheet.querySelector('textarea'); if (ta) copyText(ta.value);
+    case 'copyCode':
+      if (ctx.code) copyText(ctx.code);
       break;
-    }
     case 'sendCode': {
       const s3 = shopById(ctx.id); if (!isShared(s3)) break;
-      const text = `Join my "${s3.name}" list in Basket.\n\nOpen Basket from your Home Screen, go to Settings, Shared lists, Enter a code, and paste:\n\n${makeCode(s3)}\n\nDon't have Basket yet? ${location.origin}${location.pathname}`;
+      const text = `Join my "${s3.name}" list in Basket.\n\nOpen Basket from your Home Screen, go to Settings, Shared lists, Enter a code, and type:\n\n${ctx.code}\n\nOr tap this link on your phone: ${joinUrl(s3.shared.listId)}\n\nDon't have Basket yet? ${location.origin}${location.pathname}`;
       if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text);
       break;
     }
@@ -1801,232 +1780,185 @@ $('#install').addEventListener('click', async e => {
   }
 });
 
-/* ---------- Shared lists (synced through a private GitHub repo) ----------
-   A shared list is an ordinary shop with a `shared` block:
-     { owner, repo, listId, token, tokenAt, expiresAt, lastSyncAt, lastError, pending, sha,
-       tombstones:[{id, at}], sig, secSig, metaSig }
-   Its items live in state.items like any shop's. The repo holds lists/<listId>.json.
-   Merging is per item by updatedAt; deletions travel as tombstones. */
-const GH = 'https://api.github.com';
-const TOMBSTONE_DAYS = 30;
-const CODE_PREFIX = 'BSKT-';
-const isShared = shop => !!(shop && shop.shared);
+/* ---------- Shared lists (live sync through Firebase) ----------
+   A shared list is an ordinary shop with shared:{ fb:true, listId }. Its items live in state.items
+   like any shop's, and are mirrored to Firestore:  lists/<listId>  (name, colour, sections)
+                                                    lists/<listId>/items/<itemId>
+   Local edits are written after every save(); remote edits arrive live and replace the shop's items.
+   The code people type is the list id, which is random and unguessable. */
+const FB_VERSION = '11.10.0';
+const FB_CDN = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const isShared = shop => !!(shop && shop.shared && shop.shared.fb);
 const sharedShops = () => state.shops.filter(isShared);
+const sharingConfigured = () => !!(window.BASKET_FIREBASE && window.BASKET_FIREBASE.apiKey && window.BASKET_FIREBASE.projectId);
 
-const utf8ToB64 = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
-const b64ToUtf8 = b => new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
-const b64url = s => utf8ToB64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const unb64url = s => b64ToUtf8(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
-
-function makeCode(shop){
-  const sh = shop.shared;
-  return CODE_PREFIX + b64url(JSON.stringify({ v:1, o:sh.owner, r:sh.repo, l:sh.listId, t:sh.token, n:shop.name }));
+function newListId(){
+  const bytes = new Uint8Array(16);
+  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes); else for (let i = 0; i < 16; i++) bytes[i] = Math.random() * 256;
+  return [...bytes].map(b => CODE_ALPHABET[b % 32]).join('');
 }
+const formatCode = id => 'BSKT-' + id.match(/.{1,4}/g).join('-');
 function parseCode(raw){
-  let s = String(raw || '').replace(/\s+/g, '');
-  const m = s.match(/#join=([^&]+)/); if (m) s = decodeURIComponent(m[1]);
-  if (!s.toUpperCase().startsWith(CODE_PREFIX)) return null;
-  try {
-    const o = JSON.parse(unb64url(s.slice(CODE_PREFIX.length)));
-    if (!o || !o.o || !o.r || !o.l || !o.t) return null;
-    return { owner:String(o.o), repo:String(o.r), listId:String(o.l), token:String(o.t), name:clean(o.n || 'Shared list') };
-  } catch(e) { return null; }
+  let s = String(raw || '');
+  const m = s.match(/#join=([^&\s]+)/); if (m) s = decodeURIComponent(m[1]);
+  s = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (s.startsWith('BSKT')) s = s.slice(4);
+  s = s.replace(/O/g, '0').replace(/I/g, '1'); // forgive the usual misreads
+  if (s.length !== 16 || [...s].some(c => !CODE_ALPHABET.includes(c))) return null;
+  return s;
 }
-const joinUrl = shop => `${location.origin}${location.pathname}#join=${encodeURIComponent(makeCode(shop))}`;
+const joinUrl = id => `${location.origin}${location.pathname}#join=${id}`;
 
-/* GitHub API */
-class GhError extends Error { constructor(status, msg){ super(msg); this.status = status; } }
-async function gh(token, method, path, body){
-  let res;
-  try {
-    res = await fetch(GH + path, {
-      method, cache:'no-store',
-      headers: Object.assign({ Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' },
-        body ? { 'Content-Type':'application/json' } : {}),
-      body: body ? JSON.stringify(body) : undefined
+/* Firebase loads on demand so the app opens instantly and still works if the SDK can't be fetched. */
+let fb = null, fbLoading = null;
+function loadFirebase(){
+  if (fb) return Promise.resolve(fb);
+  if (fbLoading) return fbLoading;
+  if (!sharingConfigured()) return Promise.reject(new Error('not-configured'));
+  fbLoading = Promise.all([
+    import(FB_CDN + 'firebase-app.js'), import(FB_CDN + 'firebase-auth.js'), import(FB_CDN + 'firebase-firestore.js')
+  ]).then(async ([appM, authM, fsM]) => {
+    const app = appM.initializeApp(window.BASKET_FIREBASE);
+    let db;
+    try {
+      db = fsM.initializeFirestore(app, { localCache: fsM.persistentLocalCache({ tabManager: fsM.persistentMultipleTabManager() }) });
+    } catch(e) { db = fsM.getFirestore(app); }
+    const auth = authM.getAuth(app);
+    await new Promise((resolve, reject) => {
+      const stop = authM.onAuthStateChanged(auth, u => { if (u) { stop(); resolve(); } }, reject);
+      authM.signInAnonymously(auth).catch(reject);
     });
-  } catch(e) { throw new GhError(0, 'offline'); }
-  const exp = res.headers.get('github-authentication-token-expiration');
-  const data = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new GhError(res.status, (data && data.message) || `GitHub error ${res.status}`);
-  return { data, expiresAt: exp ? Date.parse(exp.replace(' UTC', 'Z').replace(' ', 'T')) || null : null };
+    fb = { app, db, auth, fs:fsM };
+    return fb;
+  }).catch(e => { fbLoading = null; throw e; });
+  return fbLoading;
 }
-const listPath = sh => `/repos/${sh.owner}/${sh.repo}/contents/lists/${sh.listId}.json`;
-async function ghGetList(sh){
-  try {
-    const r = await gh(sh.token, 'GET', listPath(sh) + `?t=${Date.now()}`);
-    let doc = null;
-    try { doc = JSON.parse(b64ToUtf8(r.data.content.replace(/\n/g, ''))); } catch(e) { doc = null; }
-    return { doc, sha:r.data.sha, expiresAt:r.expiresAt };
-  } catch(e) {
-    if (e.status === 404) return { doc:null, sha:null, expiresAt:null };
-    throw e;
-  }
-}
-async function ghPutList(sh, doc, sha, message){
-  const body = { message, content:utf8ToB64(JSON.stringify(doc)) };
-  if (sha) body.sha = sha;
-  const r = await gh(sh.token, 'PUT', listPath(sh), body);
-  return { sha:r.data.content.sha, expiresAt:r.expiresAt };
+function fbErrorText(e){
+  const code = (e && e.code) || '';
+  if (!e) return 'Something went wrong.';
+  if (e.message === 'not-configured') return "Sharing isn't set up on this copy of Basket yet. See the README.";
+  if (code.includes('permission-denied')) return 'Not allowed. Check the Firestore rules and that Anonymous sign-in is turned on.';
+  if (code.includes('unavailable') || code.includes('network') || /Failed to fetch|import/i.test(e.message || '')) return 'No signal. Try again when you are online.';
+  if (code.includes('operation-not-allowed')) return 'Anonymous sign-in is not turned on in Firebase.';
+  return e.message || String(e);
 }
 
-/* Local <-> document */
+/* Local <-> Firestore */
 const sharedItemFields = i => ({ id:i.id, name:i.name, qty:clampQty(i.qty), sectionId:i.sectionId || null, done:!!i.done,
   doneAt:i.doneAt || null, order:i.order || 0, addedAt:i.addedAt || 0, updatedAt:i.updatedAt || 0 });
-function buildDoc(shop){
-  const sh = shop.shared;
-  return {
-    v:1, id:sh.listId, name:shop.name, color:shop.color, metaUpdatedAt:sh.metaAt || 0,
-    sections:shop.sections, sectionsUpdatedAt:sh.sectionsAt || 0,
-    items:itemsIn(shop.id).map(sharedItemFields),
-    tombstones:(sh.tombstones || []).slice(),
-    access:{ token:sh.token, updatedAt:sh.tokenAt || 0, expiresAt:sh.expiresAt || null },
-    updatedAt:Date.now()
-  };
-}
-const byIdSort = arr => (arr || []).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-const docSig = d => JSON.stringify([d.name, d.color, d.sections || [], byIdSort((d.items || []).filter(i => i && i.id).map(sharedItemFields)),
-  byIdSort((d.tombstones || []).filter(t => t && t.id)).map(t => [t.id, t.at]), d.access && d.access.token]);
+const itemSig = i => JSON.stringify(sharedItemFields(i));
+const metaOf = shop => ({ name:shop.name, color:shop.color, sections:shop.sections });
+const live = new Map(); // listId -> { shop, known:Map(itemId->sig), metaSig, unsubs:[], fromCache, pending, ready }
+const ownDeletes = new Set();
 
-// Called from save(): spot local changes to shared lists and schedule a push.
+function listRef(id){ return fb.fs.doc(fb.db, 'lists', id); }
+function itemRef(id, itemId){ return fb.fs.doc(fb.db, 'lists', id, 'items', itemId); }
+
+// Called from save(): push whatever changed on shared lists. Firestore queues it if offline.
 function noteSharedChanges(){
-  let dirty = false;
+  if (!fb) return;
   sharedShops().forEach(shop => {
-    const sh = shop.shared;
-    const secSig = JSON.stringify(shop.sections), metaSig = shop.name + '|' + shop.color;
-    if (sh.secSig !== undefined && sh.secSig !== secSig) sh.sectionsAt = Date.now();
-    if (sh.metaSig !== undefined && sh.metaSig !== metaSig) sh.metaAt = Date.now();
-    sh.secSig = secSig; sh.metaSig = metaSig;
-    const sig = docSig(buildDoc(shop));
-    if (sh.sig !== sig) { sh.pending = true; dirty = true; }
+    const L = live.get(shop.shared.listId); if (!L || !L.ready) return;
+    const current = new Map(itemsIn(shop.id).map(i => [i.id, i]));
+    current.forEach((i, id) => {
+      const sig = itemSig(i);
+      if (L.known.get(id) !== sig) { L.known.set(id, sig); fb.fs.setDoc(itemRef(L.id, id), sharedItemFields(i)).catch(() => {}); }
+    });
+    [...L.known.keys()].forEach(id => {
+      if (!current.has(id)) { L.known.delete(id); ownDeletes.add(id); fb.fs.deleteDoc(itemRef(L.id, id)).catch(() => {}); }
+    });
+    const ms = JSON.stringify(metaOf(shop));
+    if (L.metaSig !== ms) { L.metaSig = ms; fb.fs.setDoc(listRef(L.id), Object.assign(metaOf(shop), { updatedAt:Date.now() }), { merge:true }).catch(() => {}); }
   });
-  if (dirty) schedulePush();
-  return dirty;
 }
-// An item is leaving a shared list (removed, cleared, or moved to a private shop).
-function noteLeftShared(item, newShopId){
-  const from = shopById(item.shopId);
-  if (!isShared(from) || newShopId === from.id) return;
-  from.shared.tombstones = (from.shared.tombstones || []).filter(t => t.id !== item.id);
-  from.shared.tombstones.push({ id:item.id, at:Date.now() });
-}
+function noteLeftShared(){ /* deletions are picked up by noteSharedChanges */ }
 
-function mergeDoc(shop, remote){
-  const sh = shop.shared;
-  const local = buildDoc(shop);
-  const cutoff = Date.now() - TOMBSTONE_DAYS * DAY;
-  const tomb = new Map();
-  [...(local.tombstones || []), ...((remote && remote.tombstones) || [])].forEach(t => {
-    if (t && t.id && t.at > cutoff && (!tomb.has(t.id) || tomb.get(t.id) < t.at)) tomb.set(t.id, t.at);
-  });
-  const dead = (it) => tomb.has(it.id) && tomb.get(it.id) > (it.updatedAt || 0);
-  const byId = new Map();
-  local.items.forEach(i => { if (!dead(i)) byId.set(i.id, i); });
-  const arrived = [];
-  ((remote && remote.items) || []).forEach(ri => {
-    if (!ri || !ri.id || !ri.name) return;
-    ri = sharedItemFields(ri);
-    if (dead(ri)) return;
-    const li = byId.get(ri.id);
-    if (!li) { byId.set(ri.id, ri); arrived.push(ri); }
-    else if ((ri.updatedAt || 0) > (li.updatedAt || 0)) byId.set(ri.id, ri);
-  });
-  // Items the other phone removed go to this phone's Recently removed, not into thin air.
-  local.items.forEach(i => { if (dead(i) && !(local.tombstones || []).some(t => t.id === i.id)) pushRemoved(Object.assign({ shopId:shop.id }, i)); });
-  if (remote) {
-    if ((remote.sectionsUpdatedAt || 0) > (sh.sectionsAt || 0) && Array.isArray(remote.sections)) {
-      shop.sections = remote.sections.filter(x => x && x.id && x.name); sh.sectionsAt = remote.sectionsUpdatedAt;
+function subscribe(shop){
+  const id = shop.shared.listId;
+  if (live.has(id)) return;
+  const L = { id, shop, known:new Map(), metaSig:null, unsubs:[], fromCache:true, pending:false, ready:false, missing:false };
+  live.set(id, L);
+  L.unsubs.push(fb.fs.onSnapshot(fb.fs.collection(fb.db, 'lists', id, 'items'), { includeMetadataChanges:true }, snap => {
+    const s = shopById(shop.id); if (!s) return;
+    L.fromCache = snap.metadata.fromCache; L.pending = snap.metadata.hasPendingWrites;
+    const incoming = new Map();
+    snap.forEach(d => { const v = d.data(); if (v && v.name) incoming.set(d.id, Object.assign(sharedItemFields(Object.assign({ id:d.id }, v)), { shopId:s.id })); });
+    // Items the other person removed go to Recently removed, not into thin air.
+    snap.docChanges().forEach(ch => {
+      if (ch.type !== 'removed' || ch.doc.metadata.hasPendingWrites) return;
+      if (ownDeletes.has(ch.doc.id)) { ownDeletes.delete(ch.doc.id); return; }
+      const local = itemById(ch.doc.id);
+      if (local) { state.removed.unshift(Object.assign({}, local, { removedAt:Date.now() })); if (state.removed.length > MAX_REMOVED) state.removed.length = MAX_REMOVED; }
+    });
+    // Before the first snapshot has landed, local edits made offline since the last run are kept and sent.
+    if (!L.ready) {
+      L.ready = true;
+      itemsIn(s.id).forEach(i => { if (!incoming.has(i.id)) incoming.set(i.id, i); });
     }
-    if ((remote.metaUpdatedAt || 0) > (sh.metaAt || 0)) {
-      if (remote.name) shop.name = String(remote.name).slice(0, 80);
-      if (remote.color) shop.color = remote.color;
-      sh.metaAt = remote.metaUpdatedAt;
-    }
-    const acc = remote.access;
-    if (acc && acc.token && acc.token !== sh.token && (acc.updatedAt || 0) > (sh.tokenAt || 0)) {
-      sh.token = acc.token; sh.tokenAt = acc.updatedAt; sh.expiresAt = acc.expiresAt || null;
-    }
-  }
-  // Rebuild this shop's items in state, keeping anything not in this shop untouched.
-  const others = state.items.filter(i => i.shopId !== shop.id);
-  const mine = [...byId.values()].map(i => Object.assign({}, i, { shopId:shop.id }));
-  state.items = others.concat(mine);
-  sh.tombstones = [...tomb.entries()].map(([id, at]) => ({ id, at }));
-  sh.secSig = JSON.stringify(shop.sections); sh.metaSig = shop.name + '|' + shop.color;
-  return arrived.length;
+    state.items = state.items.filter(i => i.shopId !== s.id).concat([...incoming.values()]);
+    L.known = new Map([...incoming.entries()].map(([k, v]) => [k, itemSig(v)]));
+    safeSet(KEY, JSON.stringify(state));
+    render();
+    noteSharedChanges();
+  }, err => { L.error = err; renderSyncState(); }));
+  L.unsubs.push(fb.fs.onSnapshot(listRef(id), { includeMetadataChanges:true }, snap => {
+    const s = shopById(shop.id); if (!s) return;
+    if (!snap.exists()) { if (!snap.metadata.fromCache) L.missing = true; renderSyncState(); return; }
+    L.missing = false;
+    const v = snap.data() || {};
+    if (v.name) s.name = String(v.name).slice(0, 80);
+    if (v.color) s.color = v.color;
+    if (Array.isArray(v.sections)) s.sections = v.sections.filter(x => x && x.id && x.name);
+    L.metaSig = JSON.stringify(metaOf(s));
+    safeSet(KEY, JSON.stringify(state));
+    render();
+  }, err => { L.error = err; renderSyncState(); }));
 }
-
-/* Sync engine: one run at a time, queued if asked again mid-run. */
-const sync = { running:false, queued:false, timer:0, poll:0, manual:false };
-function schedulePush(delay){
-  clearTimeout(sync.timer);
-  sync.timer = setTimeout(() => syncAll(false), delay == null ? 1500 : delay);
+function unsubscribe(id){
+  const L = live.get(id); if (!L) return;
+  L.unsubs.forEach(u => { try { u(); } catch(e) {} });
+  live.delete(id);
 }
-async function syncAll(manual){
+async function startSharing(){
   if (!sharedShops().length) return;
-  if (sync.running) { sync.queued = true; sync.manual = sync.manual || manual; return; }
-  sync.running = true; sync.manual = !!manual;
-  renderSyncState();
-  let arrived = 0, failed = null;
-  for (const shop of sharedShops()) {
-    try { arrived += await syncShop(shop); }
-    catch(e) { failed = e; }
-  }
-  sync.running = false;
-  safeSet(KEY, JSON.stringify(state));
-  render();
-  if (sync.manual) {
-    if (failed) toast(failed.status === 0 ? 'No signal. Changes will send when you\'re back online.' : syncErrorText(failed));
-    else toast(arrived ? `Updated, ${arrived} new ${arrived === 1 ? 'item' : 'items'}` : 'Up to date');
-  }
-  if (sync.queued) { sync.queued = false; const m = sync.manual; sync.manual = false; syncAll(m); }
+  try { await loadFirebase(); } catch(e) { sharingError = e; renderSyncState(); return; }
+  sharingError = null;
+  sharedShops().forEach(subscribe);
 }
-async function syncShop(shop){
-  const sh = shop.shared;
-  let arrived = 0;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let got;
-    try { got = await ghGetList(sh); }
-    catch(e) { sh.lastError = e.status === 0 ? 'offline' : (e.status === 401 || e.status === 403 ? 'auth' : 'error'); throw e; }
-    if (got.expiresAt) sh.expiresAt = got.expiresAt;
-    arrived += mergeDoc(shop, got.doc);
-    const doc = buildDoc(shop);
-    const sig = docSig(doc);
-    const remoteSig = got.doc ? docSig(got.doc) : null;
-    if (remoteSig === sig) { sh.sig = sig; sh.pending = false; sh.sha = got.sha; break; }
-    try {
-      const put = await ghPutList(sh, doc, got.sha, `Basket: ${shop.name}`);
-      sh.sig = sig; sh.pending = false; sh.sha = put.sha;
-      if (put.expiresAt) sh.expiresAt = put.expiresAt;
-      break;
-    } catch(e) {
-      if ((e.status === 409 || e.status === 422) && attempt < 2) continue; // someone else wrote first: merge again
-      sh.lastError = e.status === 0 ? 'offline' : (e.status === 401 || e.status === 403 ? 'auth' : 'error');
-      throw e;
-    }
+let sharingError = null;
+
+/* Refresh: mostly reassurance, since changes arrive live. Confirms the server copy and flushes anything queued. */
+let refreshing = false;
+async function refreshShared(){
+  if (!sharedShops().length || refreshing) return;
+  refreshing = true; renderSyncState();
+  try {
+    await loadFirebase();
+    sharedShops().forEach(subscribe);
+    await Promise.all(sharedShops().map(s => fb.fs.getDocsFromServer(fb.fs.collection(fb.db, 'lists', s.shared.listId, 'items'))));
+    await fb.fs.waitForPendingWrites(fb.db);
+    toast('Up to date');
+  } catch(e) {
+    toast(fbErrorText(e).startsWith('No signal') ? "No signal. Changes will send when you're back online." : fbErrorText(e));
   }
-  sh.lastError = null; sh.lastSyncAt = Date.now();
-  return arrived;
-}
-function syncErrorText(e){
-  if (!e) return '';
-  if (e.status === 401 || e.status === 403) return 'Sharing has stopped: the access token has expired or been removed. Open Settings to fix it.';
-  if (e.status === 404) return 'The shared list was not found. It may have been deleted from GitHub.';
-  return `Couldn't sync: ${e.message}`;
+  refreshing = false; renderSyncState();
 }
 function syncStatusText(shop){
-  const sh = shop.shared;
-  if (sync.running) return 'Syncing';
-  if (sh.lastError === 'auth') return 'Sharing stopped, see Settings';
-  if (sh.pending) return sh.lastError === 'offline' ? 'Offline, changes waiting' : 'Changes waiting';
-  if (!sh.lastSyncAt) return 'Not synced yet';
-  const m = Math.round((Date.now() - sh.lastSyncAt) / 60000);
-  return m < 1 ? 'Synced just now' : (m < 60 ? `Synced ${m} min ago` : `Synced ${ago(sh.lastSyncAt).toLowerCase()}`);
+  const L = live.get(shop.shared.listId);
+  if (sharingError) return fbErrorText(sharingError).startsWith('No signal') ? 'Offline, showing last copy' : 'Sharing needs attention, see Settings';
+  if (refreshing) return 'Checking';
+  if (!L || !L.ready) return 'Connecting';
+  if (L.error) return 'Sharing needs attention, see Settings';
+  if (L.missing) return 'This list was deleted';
+  if (L.pending) return 'Changes waiting to send';
+  if (L.fromCache) return 'Offline, showing last copy';
+  return 'Live';
 }
 function renderSyncState(){
   const any = sharedShops().length > 0;
   $('#btnSync').hidden = !any;
-  $('#btnSync').classList.toggle('spin', sync.running);
+  $('#btnSync').classList.toggle('spin', refreshing);
   if (!any) return;
   const shop = currentShop();
   if (isShared(shop)) {
@@ -2034,14 +1966,11 @@ function renderSyncState(){
     $('#subtitle').textContent = `${base}. ${syncStatusText(shop)}`;
   }
 }
-// Expiry comes from GitHub when it tells us; otherwise assume the 1 year maximum from when the token was entered.
-const tokenExpiry = sh => sh.expiresAt || (sh.tokenAt ? sh.tokenAt + 365 * DAY : null);
-const tokenWarning = () => sharedShops().some(s => { const e = tokenExpiry(s.shared); return (e && e - Date.now() < 14 * DAY) || s.shared.lastError === 'auth'; });
+const sharingWarning = () => !!sharingError && !fbErrorText(sharingError).startsWith('No signal') || [...live.values()].some(L => L.error);
 
-$('#btnSync').addEventListener('click', () => syncAll(true));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncAll(false); });
-window.addEventListener('online', () => syncAll(false));
-setInterval(() => { if (document.visibilityState === 'visible' && !sync.running) syncAll(false); }, 60000);
+$('#btnSync').addEventListener('click', refreshShared);
+window.addEventListener('online', () => { if (sharingError) startSharing(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && sharingError) startSharing(); });
 
 /* Pull down to refresh */
 const ptr = $('#ptr');
@@ -2060,51 +1989,46 @@ main.addEventListener('touchmove', e => {
 const endPull = () => {
   const p = pull; pull = null;
   ptr.classList.remove('show', 'ready');
-  if (p && p.dy > 80 && window.scrollY <= 0) syncAll(true);
+  if (p && p.dy > 80 && window.scrollY <= 0) refreshShared();
 };
 main.addEventListener('touchend', endPull);
 main.addEventListener('touchcancel', endPull);
 
 /* Create, join, leave */
-async function createSharedList({ name, token, repoName }){
-  const me = await gh(token, 'GET', '/user');
-  const owner = me.data.login;
-  const repo = (repoName || 'basket-data').trim();
-  const r = await gh(token, 'GET', `/repos/${owner}/${repo}`); // must exist already
-  if (!r.data.private) throw new GhError(400, `The repository ${owner}/${repo} is public. Make it private first, or pick another.`);
+async function createSharedList(name){
+  await loadFirebase();
   const used = new Set(state.shops.map(s => s.color));
   const color = PALETTE.find(c => !used.has(c)) || PALETTE[state.shops.length % PALETTE.length];
-  const shop = { id:uid(), name, color, sections:[], shared:{
-    owner, repo, listId:uid().replace(/-/g, '').slice(0, 12), token, tokenAt:Date.now(), expiresAt:me.expiresAt || null,
-    lastSyncAt:null, lastError:null, pending:true, sha:null, tombstones:[], sig:null, secSig:'[]', metaSig:name + '|' + color, metaAt:Date.now(), sectionsAt:Date.now()
-  }};
+  const listId = newListId();
+  const shop = { id:uid(), name, color, sections:[], shared:{ fb:true, listId, joinedAt:Date.now() } };
+  await fb.fs.setDoc(listRef(listId), Object.assign(metaOf(shop), { createdAt:Date.now(), updatedAt:Date.now() }));
   state.shops.push(shop);
-  const put = await ghPutList(shop.shared, buildDoc(shop), null, `Basket: create ${name}`);
-  shop.shared.sha = put.sha; shop.shared.sig = docSig(buildDoc(shop)); shop.shared.pending = false; shop.shared.lastSyncAt = Date.now();
   state.tab = shop.id;
+  subscribe(shop);
   save(); render();
   return shop;
 }
 async function joinSharedList(code){
-  const c = parseCode(code);
-  if (!c) throw new Error('That code is not a Basket sharing code.');
-  const existing = state.shops.find(s => isShared(s) && s.shared.listId === c.listId);
+  const listId = parseCode(code);
+  if (!listId) throw new Error('That is not a Basket sharing code. It looks like BSKT-XXXX-XXXX-XXXX-XXXX.');
+  const existing = state.shops.find(s => isShared(s) && s.shared.listId === listId);
   if (existing) { state.tab = existing.id; save(); render(); return { shop:existing, already:true }; }
-  const got = await ghGetList(c);
-  if (!got.doc) throw new Error('The shared list was not found. Ask for a fresh code.');
-  const shop = { id:uid(), name:c.name, color:got.doc.color || PALETTE[0], sections:[], shared:{
-    owner:c.owner, repo:c.repo, listId:c.listId, token:c.token, tokenAt:0, expiresAt:got.expiresAt || null,
-    lastSyncAt:null, lastError:null, pending:false, sha:null, tombstones:[], sig:null, secSig:undefined, metaSig:undefined, metaAt:0, sectionsAt:0
-  }};
+  await loadFirebase();
+  const snap = await fb.fs.getDocFromServer(listRef(listId));
+  if (!snap.exists()) throw new Error('No list has that code. Check it and try again.');
+  const v = snap.data() || {};
+  const shop = { id:uid(), name:String(v.name || 'Shared list').slice(0, 80), color:v.color || PALETTE[0],
+    sections:Array.isArray(v.sections) ? v.sections : [], shared:{ fb:true, listId, joinedAt:Date.now() } };
   state.shops.push(shop);
-  await syncShop(shop);
   state.tab = shop.id;
+  subscribe(shop);
   save(); render();
   return { shop, already:false };
 }
 function leaveSharedList(id){
   const shop = shopById(id); if (!isShared(shop)) return;
   snapshot();
+  unsubscribe(shop.shared.listId);
   state.items = state.items.filter(i => i.shopId !== id);
   state.shops = state.shops.filter(s => s.id !== id);
   if (state.tab === id) state.tab = 'list';
@@ -2115,17 +2039,14 @@ function leaveSharedList(id){
 /* Sheets */
 function openShareHub(){
   const lists = sharedShops();
-  const rows = lists.map(s => {
-    const sh = s.shared;
-    const e = tokenExpiry(sh);
-    const exp = e ? `Token ${e < Date.now() ? 'expired' : 'expires'} ${new Date(e).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}` : '';
-    return `<div class="secrow"><span class="nm">${esc(s.name)}<small>${esc(syncStatusText(s))}${exp ? '. ' + esc(exp) : ''}</small></span>`
-      + `<button type="button" class="mini text" data-act="showCode" data-shop="${esc(s.id)}">Code</button>`
-      + `<button type="button" class="mini text" data-act="updateToken" data-shop="${esc(s.id)}">Token</button></div>`;
-  }).join('');
+  const rows = lists.map(s => `<div class="secrow"><span class="nm">${esc(s.name)}<small>${esc(syncStatusText(s))}</small></span>`
+      + `<button type="button" class="mini text" data-act="showCode" data-shop="${esc(s.id)}">Code</button></div>`).join('');
+  const problem = sharingError && !fbErrorText(sharingError).startsWith('No signal') ? `<p class="note err">${esc(fbErrorText(sharingError))}</p>` : '';
   openSheet(
     '<h2>Shared lists</h2>'
-    + '<p class="sub">A shared list is a tab everyone with its code can see and edit. Your own shops stay private.</p>'
+    + '<p class="sub">A shared list is a tab everyone with its code can see and edit, live. Your own shops stay private.</p>'
+    + problem
+    + (!sharingConfigured() ? '<p class="note err">Sharing isn\'t set up on this copy of Basket yet. The README explains the one-off setup.</p>' : '')
     + (rows ? `<h3 class="sh-label">Your shared lists</h3>${rows}` : '')
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="joinStart">Enter a code</button>'
     + '<button type="button" class="btn primary" data-act="createStart">Create a list</button></div>',
@@ -2133,58 +2054,51 @@ function openShareHub(){
   );
 }
 function openCreateShared(){
-  openSheet(
-    '<h2>Create a shared list</h2>'
-    + '<p class="sub">Stored in a private GitHub repository you own. Free, and the data stays yours.</p>'
-    + '<ol class="steps"><li>On github.com create a <strong>private</strong> repository called <strong>basket-data</strong>, with "Add a README" ticked.</li>'
-    + '<li>Make a fine-grained token (Settings, Developer settings) for just that repository with <strong>Contents: Read and write</strong>. Set the expiry to 1 year.</li>'
-    + '<li>Paste the token below.</li></ol>'
-    + '<form data-form="create" autocomplete="off">'
-    + '<label class="lbl">List name<input class="field" name="name" value="Home" maxlength="40" required></label>'
-    + '<label class="lbl">Repository name<input class="field" name="repo" value="basket-data" maxlength="100" required autocapitalize="off" autocorrect="off"></label>'
-    + '<label class="lbl">Access token<input class="field" name="token" placeholder="github_pat_..." required autocapitalize="off" autocorrect="off" spellcheck="false"></label>'
-    + '<p class="note err" hidden></p>'
-    + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="submit" class="btn primary">Create</button></div></form>',
-    { type:'create' }
-  );
-  sheet.querySelector('input[name="token"]').focus();
+  openPrompt({ title:'Create a shared list', sub:'Give it a name, for example Home or Mum and Dad.', placeholder:'List name', value:'Home', button:'Create',
+    onSave: async name => {
+      const btn = sheet.querySelector('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Creating'; }
+      try { const shop = await createSharedList(name); openShowCode(shop.id); toast(`${shop.name} is ready to share`); }
+      catch(e) { toast(fbErrorText(e)); openShareHub(); }
+    }
+  });
 }
 function openJoinShared(prefill){
   openSheet(
     '<h2>Join a shared list</h2>'
-    + '<p class="sub">Paste the code the other person sent you, or scan their QR code with your Camera app.</p>'
+    + '<p class="sub">Type the code the other person gave you, or scan their QR code with your Camera app.</p>'
     + '<form data-form="join" autocomplete="off">'
-    + `<textarea class="field code" name="code" rows="4" placeholder="BSKT-..." autocapitalize="off" autocorrect="off" spellcheck="false">${esc(prefill || '')}</textarea>`
+    + `<input class="field code" name="code" placeholder="BSKT-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" value="${esc(prefill ? formatCode(prefill) : '')}" aria-label="Sharing code">`
     + '<p class="note err" hidden></p>'
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="pasteCode">Paste</button><button type="submit" class="btn primary">Join</button></div></form>',
     { type:'join' }
   );
-  if (!prefill) sheet.querySelector('textarea').focus();
+  if (!prefill) sheet.querySelector('input.code').focus();
 }
 function openShowCode(id){
   const shop = shopById(id); if (!isShared(shop)) return;
-  const code = makeCode(shop);
+  const code = formatCode(shop.shared.listId);
   let svg = '';
   try {
-    if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(joinUrl(shop)); q.make(); svg = q.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
+    if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(joinUrl(shop.shared.listId)); q.make(); svg = q.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
   } catch(e) { svg = ''; }
   openSheet(
     `<h2>Share ${esc(shop.name)}</h2>`
-    + '<p class="sub">On the other phone, open Basket from the Home Screen, go to Settings, Shared lists, Enter a code, and paste this. Or scan the QR code with the Camera app.</p>'
+    + '<p class="sub">On the other phone: Settings, Shared lists, Enter a code. Or scan this with the Camera app.</p>'
     + (svg ? `<div class="qr">${svg}</div>` : '')
-    + `<textarea class="field code" readonly rows="3" aria-label="Sharing code">${esc(code)}</textarea>`
-    + '<p class="note">Anyone with this code can read and change the list. Only send it to people you want on it.</p>'
+    + `<p class="bigcode">${esc(code)}</p>`
+    + '<p class="note">Anyone with this code can see and change the list, so only give it to people you want on it.</p>'
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="copyCode">Copy code</button><button type="button" class="btn primary" data-act="sendCode">Send</button></div>',
-    { type:'code', id }
+    { type:'code', id, code }
   );
 }
-function openSafariJoin(code){
+function openSafariJoin(listId){
+  const code = formatCode(listId);
   openSheet(
     '<h2>You have been sent a shared list</h2>'
     + '<p class="sub">Codes are entered inside the Basket app, not in Safari.</p>'
-    + '<ol class="steps"><li>Tap <strong>Copy code</strong>.</li><li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
-    + '<li>Go to Settings, Shared lists, Enter a code, then Paste.</li></ol>'
-    + `<textarea class="field code" readonly rows="3" aria-label="Sharing code">${esc(code)}</textarea>`
+    + '<ol class="steps"><li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
+    + '<li>Go to Settings, Shared lists, Enter a code.</li><li>Type this code:</li></ol>'
+    + `<p class="bigcode">${esc(code)}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="copyCode">Copy code</button></div>',
     { type:'safarijoin', code }
   );
@@ -2195,7 +2109,7 @@ function showFormError(form, msg){
 }
 async function copyText(text){
   try { await navigator.clipboard.writeText(text); toast('Copied'); }
-  catch(e) { toast('Hold the code and choose Copy'); }
+  catch(e) { toast("Couldn't copy. Write the code down instead."); }
 }
 
 /* ---------- Start ---------- */
@@ -2203,11 +2117,12 @@ render();
 (function handleJoinLink(){
   const m = location.hash.match(/#join=([^&]+)/);
   if (!m) return;
-  const code = decodeURIComponent(m[1]);
+  const listId = parseCode(decodeURIComponent(m[1]));
   history.replaceState(null, '', location.pathname + location.search);
-  if (isStandalone()) openJoinShared(code); else openSafariJoin(code);
+  if (!listId) return;
+  if (isStandalone()) openJoinShared(listId); else openSafariJoin(listId);
 })();
-syncAll(false);
+startSharing();
 if (loadWarning) toast(loadWarning);
 </script>
 </body>

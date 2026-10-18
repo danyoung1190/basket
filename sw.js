@@ -1,11 +1,12 @@
 // Basket service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'basket-v5';
+const CACHE = 'basket-v6';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './qrcode.js',
+  './firebase-config.js',
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -18,7 +19,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== CACHE + '-sdk').map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -27,7 +28,19 @@ self.addEventListener('activate', event => {
 // then refresh the cached copy in the background when online.
 self.addEventListener('fetch', event => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  // The Firebase SDK is fetched from Google. Keep a copy so sharing still starts with no signal.
+  if (req.method === 'GET' && url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) {
+    event.respondWith(caches.open(CACHE + '-sdk').then(async cache => {
+      const hit = await cache.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    }));
+    return;
+  }
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   const isPage = req.mode === 'navigate';
   event.respondWith(
     caches.open(CACHE).then(async cache => {

@@ -33,27 +33,51 @@ It needs an https web address so the iPhone can install it and use it offline. G
 
 ## Sharing a list between phones
 
-A shared list is an extra tab (for example "Home") that every phone with its code can see and edit. Your own shops stay private. It syncs through a private GitHub repository you own, so it's free and the data stays yours.
+A shared list is an extra tab (for example "Home") that every phone with its code can see and edit, live. Your own shops stay private. Anyone can create a list: Settings > **Shared lists** > **Create a list**, name it, and it shows a code like `BSKT-7K2M-Q9RD-4XNP-W8TA` plus a QR code. The other person goes to Settings > Shared lists > **Enter a code**, or scans the QR with their Camera app. Nobody needs an account.
 
-**One-off setup (about 5 minutes, on the computer):**
-1. On github.com click **+ > New repository**. Name it `basket-data`, choose **Private**, tick **Add a README**, click Create.
-2. Make an access token: your profile picture > **Settings** > **Developer settings** (bottom of the left menu) > **Personal access tokens** > **Fine-grained tokens** > **Generate new token**.
-   - Name: Basket. Expiration: **Custom**, one year from today.
-   - Repository access: **Only select repositories** > `basket-data`.
-   - Permissions > Repository permissions > **Contents: Read and write**. Nothing else.
-   - Click Generate, then copy the token (it starts `github_pat_`). You only see it once, so paste it somewhere safe, for example a note to yourself.
-3. In Basket on your phone: Settings > **Shared lists** > **Create a list**. Paste the token and tap Create.
-4. It shows a QR code and a long code. On the other phone, either scan the QR with the Camera app and follow the steps, or send the code (the Send button) and in Basket go to Settings > Shared lists > **Enter a code** > Paste > Join.
+Behind the scenes the lists live in a free Google Firebase project that you set up once. Family use stays well inside the free limits.
 
-**Day to day:** it syncs when the app opens, after each change, and every minute while open. Pull the list down or tap the refresh arrows to sync now. With no signal, changes queue and send later. If two people change the same list, both changes are kept. Anything the other person removes lands in your Recently removed.
+**One-off setup (about 15 minutes, on the computer):**
+1. Go to console.firebase.google.com, sign in with a Google account, and click **Create a project**. Name it `basket`. Turn Google Analytics off. Create.
+2. Left menu **Build > Authentication** > **Get started** > **Anonymous** > turn **Enable** on > Save.
+3. **Build > Firestore Database** > **Create database** > pick a European location (for example europe-west2, London) > **Start in production mode** > Create.
+4. In Firestore open the **Rules** tab, replace everything with the rules below, and click **Publish**.
+5. Click the gear next to **Project Overview** > **Project settings**. Scroll to **Your apps**, click the **</>** (web) icon, nickname `Basket`, leave Hosting unticked, **Register app**. It shows a block starting `const firebaseConfig = {`. Copy the lines between the braces.
+6. Open `firebase-config.js` from this folder in a text editor and paste those lines between its braces, so it looks like:
+   ```
+   window.BASKET_FIREBASE = {
+     apiKey: "AIza...",
+     authDomain: "basket-xxxx.firebaseapp.com",
+     projectId: "basket-xxxx",
+     storageBucket: "basket-xxxx.appspot.com",
+     messagingSenderId: "1234567890",
+     appId: "1:1234567890:web:abc123"
+   };
+   ```
+   These values identify your project; they are not secret, so it is fine for them to be in a public repository.
+7. Upload `firebase-config.js` to GitHub with the rest of the files. Done.
 
-**Each year:** the token expires. Settings shows a yellow dot two weeks before. Make a new token the same way, then Settings > Shared lists > **Token** and paste it. Other phones pick it up on their next sync.
+**Firestore rules** (step 4):
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /lists/{listId} {
+      allow read, write: if request.auth != null;
+      match /items/{itemId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}
+```
+Lists are protected by their codes, which are random and long enough that they cannot be guessed. Only give a code to people you want on the list.
 
-**Note:** a backup file includes the sharing code, so treat it like a password.
+**Day to day:** changes appear on the other phones within a second or two while online. With no signal, changes queue and send later, and the tab says so. Pull the list down or tap the refresh arrows to check now. Anything the other person removes lands in your Recently removed. Leaving a list (the ... button > Leave shared list) only removes it from your phone.
 
 ## Important things to know
 
-- **The list lives only on her phone.** Deleting the Home Screen icon deletes the list with it.
+- **Private lists live only on the phone.** Deleting the Home Screen icon deletes them with it. Shared lists come back when you re-enter their codes.
 - **Back up** from Settings now and then. Save the file to Files, or send it to yourself. A yellow dot on the Settings button means it has been over 30 days since the last backup.
 - **Don't change the web address later.** iPhone ties the saved list to the address. If you do move it, back up first, then restore on the new address.
 
