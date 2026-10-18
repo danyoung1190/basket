@@ -1,11 +1,12 @@
 // Basket service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'basket-v6';
+const CACHE = 'basket-v7';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './qrcode.js',
+  './jsqr.js',
   './firebase-config.js',
   './icons/icon-180.png',
   './icons/icon-192.png',

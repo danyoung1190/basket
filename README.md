@@ -23,17 +23,22 @@ It needs an https web address so the iPhone can install it and use it offline. G
 - **Quantities**: type "Chicken x4" or "4x chicken", or hold an item and use − / +. Tapping a suggestion reuses the quantity she last used.
 - **Sections**: new shops come with Fruit & veg, Bakery, Meat & fish, Fridge, Freezer, Cupboard and others. Items file themselves into the right one. If she moves something, that choice is remembered over the built-in guess. Empty sections stay hidden until she drags an item.
 - **Due again**: each tick-off is recorded as a purchase. Once something has been bought twice or more, the app learns how often she buys it and shows it under "Due again" when it's due. Holding an item shows its history, for example "Bought 5 times, about every 7 days".
+- **New shop or list**: tap **+ Add** at the end of the tabs.
 - **Send to a shop**: hold an item, then tap a shop. "Send N to their usual shops" sorts everything she has sent somewhere before.
 - **Reorder**: drag the handle on the right of an item. Drag it under a section heading, such as Fridge, to file it there.
 - **Tick off**: tap an item. Ticked items go grey at the bottom. Tap **Clear** when she has finished shopping.
-- **Shop settings** (the ... button, or hold a shop's tab): rename it, change its colour, and add sections in the order she walks round the shop. Supermarkets start with standard sections; other shops start with none.
+- **Shop settings** (the ... button, or hold a shop's tab): rename it, change its colour, show its sharing code if it's shared, and add sections in the order she walks round the shop. Supermarkets start with standard sections; other shops start with none.
 - **Share**: the share button sends the list as text, for example to WhatsApp.
 - **Undo**: every move, removal or clear shows an Undo button for 6 seconds.
 - **Recently removed**: open Settings to restore anything that was removed or cleared.
 
 ## Sharing a list between phones
 
-A shared list is an extra tab (for example "Home") that every phone with its code can see and edit, live. Your own shops stay private. Anyone can create a list: Settings > **Shared lists** > **Create a list**, name it, and it shows a code like `BSKT-7K2M-Q9RD-4XNP-W8TA` plus a QR code. The other person goes to Settings > Shared lists > **Enter a code**, or scans the QR with their Camera app. Nobody needs an account.
+A shared list is an extra tab (for example "Home") that every phone on it can see and edit, live. Your own shops stay private. Nobody needs an account.
+
+- **Create:** tap **+ Add** > **New shared list**, name it. It shows a QR code and a code like `BSKT-7K2M-Q9RD-4XNP-W8TA`. To show it again later: open the list, tap **•••** > **Share code**.
+- **Join, in the same room:** on the other phone open Basket, tap **+ Add** > **Join a shared list** > **Scan their code**, and point it at the QR. Scan from inside Basket, not with the Camera app: iPhone opens Camera links in Safari, which can't reach the Home Screen app.
+- **Join, from a message:** the **Send** button writes a message with the code. They copy the whole message, then in Basket tap **+ Add** > **Join a shared list** > **Paste a code**. Basket finds the code in the message.
 
 Behind the scenes the lists live in a free Google Firebase project that you set up once. Family use stays well inside the free limits.
 

@@ -182,6 +182,21 @@ textarea.field{height:auto; padding:10px 14px; resize:none; width:100%; margin-t
 .steps{margin:14px 0 0; padding-left:22px; font-size:15px; line-height:1.45}
 .steps li + li{margin-top:6px}
 .err{color:var(--danger)}
+.menu{display:grid; gap:10px; margin-top:16px}
+.menu-item{display:flex; align-items:center; gap:14px; width:100%; padding:14px; border:0; border-radius:16px; background:var(--chip); text-align:left}
+.menu-item .mi{flex:none; width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:var(--surface); color:var(--accent)}
+.menu-item .mi svg{width:24px; height:24px}
+.menu-item strong{display:block; font-size:17px}
+.menu-item small{display:block; margin-top:2px; color:var(--muted); font-size:14px}
+.join-big{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
+.join-big .btn{height:auto; min-height:92px; flex-direction:column; gap:8px; font-size:16px}
+.join-big .btn svg{width:28px; height:28px}
+.or{display:flex; align-items:center; gap:10px; margin:20px 0 0; color:var(--muted); font-size:13px}
+.or::before, .or::after{content:""; flex:1; height:1px; background:var(--line)}
+.scanbox{position:relative; margin-top:16px; aspect-ratio:1; border-radius:18px; overflow:hidden; background:#000}
+.scanbox video{width:100%; height:100%; object-fit:cover; display:block}
+.scanbox .frame{position:absolute; inset:16%; border:3px solid rgba(255,255,255,.9); border-radius:18px; box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.scanbox p{position:absolute; left:0; right:0; bottom:10px; margin:0; text-align:center; color:#fff; font-size:14px}
 .bigcode{margin:16px 0 0; text-align:center; font:700 22px/1.3 ui-monospace, Menlo, monospace; letter-spacing:.04em; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text}
 input.field.code{width:100%; margin-top:14px; font:600 18px ui-monospace, Menlo, monospace; text-transform:uppercase}
 .sug-add .cat{margin-left:auto; font-size:13px; color:var(--muted)}
@@ -339,7 +354,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -891,7 +906,7 @@ function renderTabs(){
     return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${esc(t.id)}" style="--c:${t.color}" aria-current="${active ? 'page' : 'false'}">`
       + (t.isList ? '' : '<span class="tdot"></span>')
       + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}${t.shared ? ICON_CLOUD : ''}</button>`;
-  }).join('') + '<button type="button" class="tab add" data-act="addShop">+ Shop</button>';
+  }).join('') + '<button type="button" class="tab add" data-act="addMenu">+ Add</button>';
   const active = tabsEl.querySelector('.tab.active');
   if (active && active.scrollIntoView) active.scrollIntoView({ block:'nearest', inline:'nearest' });
 }
@@ -954,7 +969,7 @@ function renderList(){
   if (!shop) {
     const n = sortCandidates().length;
     if (n) bar = `<button type="button" class="sortbtn" data-act="sortAll">${ICON_SORT}Send ${n} to their usual ${n === 1 ? 'shop' : 'shops'}</button>`;
-    else if (undone.length && !state.shops.length) bar = '<p class="tip">Add your shops with + Shop, then hold an item to send it there.</p>';
+    else if (undone.length && !state.shops.length) bar = '<p class="tip">Add your shops with + Add, then hold an item to send it there.</p>';
     else if (undone.length && !state.items.some(i => i.shopId)) bar = '<p class="tip">Hold an item to send it to a shop. Drag the handle to reorder.</p>';
   }
   sortBar.innerHTML = bar;
@@ -963,7 +978,8 @@ function renderList(){
     emptyEl.innerHTML = shop
       ? `<div class="empty"><h2>Nothing for ${esc(shop.name)} yet</h2><p>Add items here, or hold an item on your list and send it to ${esc(shop.name)}.</p></div>`
       : `<div class="empty"><h2>Your list is empty</h2><p>Add things you need above, then hold an item to send it to a shop.</p>`
-        + (state.shops.length ? '' : '<button type="button" class="btn primary" data-act="addShop">Add your shops</button>') + '</div>';
+        + (state.shops.length ? '' : '<button type="button" class="btn primary" data-act="addShop">Add your shops</button>'
+          + (sharingConfigured() ? '<button type="button" class="btn" style="margin:10px auto 0; max-width:240px" data-act="joinStart">Join a shared list</button>' : '')) + '</div>';
   } else if (!undone.length) {
     emptyEl.innerHTML = '<div class="empty"><h2>All done</h2><p>Everything is in the basket.</p></div>';
   } else {
@@ -1096,7 +1112,8 @@ function switchTab(id){
   window.scrollTo(0, 0);
 }
 longPress(tabsEl, '.tab', el => {
-  if (el.dataset.act === 'addShop') openAddShop({});
+  if (el.dataset.act === 'addMenu') openAddMenu();
+  else if (el.dataset.act === 'addShop') openAddShop({});
   else switchTab(el.dataset.tab);
 }, el => {
   const id = el.dataset.tab;
@@ -1105,7 +1122,8 @@ longPress(tabsEl, '.tab', el => {
 tabsEl.addEventListener('click', e => {
   if (e.detail !== 0) return; // keyboard activation only; touch and mouse use pointer events
   const el = e.target.closest('.tab'); if (!el) return;
-  if (el.dataset.act === 'addShop') openAddShop({}); else switchTab(el.dataset.tab);
+  if (el.dataset.act === 'addMenu') openAddMenu();
+  else if (el.dataset.act === 'addShop') openAddShop({}); else switchTab(el.dataset.tab);
 });
 
 /* ---------- Drag to reorder (handle only) ---------- */
@@ -1221,6 +1239,8 @@ document.addEventListener('click', e => {
   if (b.dataset.act === 'clearTicked') clearTicked();
   else if (b.dataset.act === 'sortAll') sortAll();
   else if (b.dataset.act === 'addShop') openAddShop({});
+  else if (b.dataset.act === 'addMenu') openAddMenu();
+  else if (b.dataset.act === 'joinStart') openJoinShared('');
   else if (b.dataset.act === 'dueOne') { const n = b.dataset.name; addItem(n, { qty:usualQty(n) }); }
   else if (b.dataset.act === 'dueAll') addDue(dueItems(tabShopId()).map(h => h.name));
   else if (b.dataset.act === 'dueHide') {
@@ -1277,6 +1297,7 @@ function shareList(){
 const sheet = $('#sheet'), backdrop = $('#backdrop');
 let sheetCtx = null, closeTok = 0, lastHoldAt = 0;
 function openSheet(html, ctx){
+  if (typeof stopScan === 'function') stopScan();
   closeTok++;
   sheet.innerHTML = '<div class="sheet-top"><div class="grabber" aria-hidden="true"></div>'
     + `<button type="button" class="sheet-close" data-act="cancel" aria-label="Close">${ICON_X}</button></div>` + html;
@@ -1289,6 +1310,7 @@ function openSheet(html, ctx){
   if (input) { input.focus(); input.select(); } else sheet.focus({ preventScroll:true });
 }
 function closeSheet(){
+  if (typeof stopScan === 'function') stopScan();
   if (!sheetCtx) return;
   sheetCtx = null;
   sheet.classList.remove('open'); backdrop.classList.remove('open');
@@ -1475,7 +1497,7 @@ function openShopSheet(id){
   openSheet(
     `<h2>${esc(s.name)}</h2><p class="sub">${shared ? 'Shared list. Changes here show on every phone that has joined.' : 'Shop settings'}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameShop">Rename</button>'
-    + (shared ? '<button type="button" class="btn primary" data-act="showCode">Show code</button>' : '') + '</div>'
+    + (shared ? '<button type="button" class="btn primary" data-act="showCode">Share code</button>' : '') + '</div>'
     + `<h3 class="sh-label">Colour</h3><div class="swatches">${sw}</div>`
     + `<h3 class="sh-label">Sections, in walking order</h3>${secs}`
     + '<button type="button" class="btn wide" data-act="addSection">+ Add section</button>'
@@ -1526,13 +1548,8 @@ sheet.addEventListener('submit', async e => {
   if (kind !== 'join') return;
   form.querySelectorAll('button').forEach(b => b.disabled = true);
   form.querySelector('.err').hidden = true;
-  try {
-    const r = await joinSharedList(form.querySelector('input.code').value);
-    closeSheet();
-    toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
-  } catch(err) {
-    showFormError(form, fbErrorText(err));
-  }
+  await joinWith(form.querySelector('input.code').value, true);
+  form.querySelectorAll('button').forEach(b => b.disabled = false);
 });
 
 sheet.addEventListener('click', e => {
@@ -1654,19 +1671,18 @@ sheet.addEventListener('click', e => {
     case 'createStart': openCreateShared(); break;
     case 'joinStart': openJoinShared(''); break;
     case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
-    case 'pasteCode': {
-      const ta = sheet.querySelector('input.code');
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        navigator.clipboard.readText().then(t => { if (t) ta.value = t; ta.focus(); }, () => { ta.focus(); toast('Hold the box and choose Paste'); });
-      } else { ta.focus(); toast('Hold the box and choose Paste'); }
-      break;
-    }
+    case 'pasteCode': pasteAndJoin(); break;
+    case 'scanCode': startScan(); break;
+    case 'scanStop': openJoinShared(''); break;
+    case 'menuShop': openAddShop({}); break;
+    case 'menuShared': openCreateShared(); break;
+    case 'menuJoin': openJoinShared(''); break;
     case 'copyCode':
       if (ctx.code) copyText(ctx.code);
       break;
     case 'sendCode': {
       const s3 = shopById(ctx.id); if (!isShared(s3)) break;
-      const text = `Join my "${s3.name}" list in Basket.\n\nOpen Basket from your Home Screen, go to Settings, Shared lists, Enter a code, and type:\n\n${ctx.code}\n\nOr tap this link on your phone: ${joinUrl(s3.shared.listId)}\n\nDon't have Basket yet? ${location.origin}${location.pathname}`;
+      const text = `Join my "${s3.name}" list in Basket. Copy this whole message, open Basket, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}\n\nDon't have Basket yet? Open ${location.origin}${location.pathname} in Safari.`;
       if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text);
       break;
     }
@@ -1802,6 +1818,11 @@ const formatCode = id => 'BSKT-' + id.match(/.{1,4}/g).join('-');
 function parseCode(raw){
   let s = String(raw || '');
   const m = s.match(/#join=([^&\s]+)/); if (m) s = decodeURIComponent(m[1]);
+  else {
+    // A whole pasted message: pick out the BSKT code inside it.
+    const c = s.match(/BSKT[\s-]*([A-Z0-9]{4}[\s-]*){4}/i);
+    if (c) s = c[0];
+  }
   s = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (s.startsWith('BSKT')) s = s.slice(4);
   s = s.replace(/O/g, '0').replace(/I/g, '1'); // forgive the usual misreads
@@ -2048,7 +2069,7 @@ function openShareHub(){
     + problem
     + (!sharingConfigured() ? '<p class="note err">Sharing isn\'t set up on this copy of Basket yet. The README explains the one-off setup.</p>' : '')
     + (rows ? `<h3 class="sh-label">Your shared lists</h3>${rows}` : '')
-    + '<div class="sheet-actions"><button type="button" class="btn" data-act="joinStart">Enter a code</button>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="joinStart">Join a list</button>'
     + '<button type="button" class="btn primary" data-act="createStart">Create a list</button></div>',
     { type:'share' }
   );
@@ -2062,18 +2083,138 @@ function openCreateShared(){
     }
   });
 }
+const ICON_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const ICON_PASTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/></svg>';
+const ICON_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 2 3 3 0 0 1-5.4 0A3 3 0 0 1 4 11z"/><path d="M5.5 13.5V20h13v-6.5"/></svg>';
+const ICON_PEOPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2A5 5 0 0 1 21 19"/></svg>';
+const ICON_JOIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></svg>';
+
+function openAddMenu(){
+  const can = sharingConfigured();
+  openSheet(
+    '<h2>Add</h2>'
+    + '<div class="menu">'
+    + `<button type="button" class="menu-item" data-act="menuShop"><span class="mi">${ICON_STORE}</span><span><strong>New shop</strong><small>A private list for one shop, like Tesco or B&amp;Q</small></span></button>`
+    + (can ? `<button type="button" class="menu-item" data-act="menuShared"><span class="mi">${ICON_PEOPLE}</span><span><strong>New shared list</strong><small>A list you and others can all add to, live</small></span></button>`
+           + `<button type="button" class="menu-item" data-act="menuJoin"><span class="mi">${ICON_JOIN}</span><span><strong>Join a shared list</strong><small>Scan someone's code, or paste one they sent</small></span></button>` : '')
+    + '</div>',
+    { type:'addmenu' }
+  );
+}
+
 function openJoinShared(prefill){
   openSheet(
     '<h2>Join a shared list</h2>'
-    + '<p class="sub">Type the code the other person gave you, or scan their QR code with your Camera app.</p>'
+    + '<p class="sub">Ask the other person to open their list, tap ••• then Share code.</p>'
+    + '<div class="join-big">'
+    + `<button type="button" class="btn primary" data-act="scanCode">${ICON_CAMERA}Scan their code</button>`
+    + `<button type="button" class="btn" data-act="pasteCode">${ICON_PASTE}Paste a code</button>`
+    + '</div>'
+    + '<p class="or">or type it</p>'
     + '<form data-form="join" autocomplete="off">'
     + `<input class="field code" name="code" placeholder="BSKT-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" value="${esc(prefill ? formatCode(prefill) : '')}" aria-label="Sharing code">`
     + '<p class="note err" hidden></p>'
-    + '<div class="sheet-actions"><button type="button" class="btn" data-act="pasteCode">Paste</button><button type="submit" class="btn primary">Join</button></div></form>',
+    + '<div class="sheet-actions"><button type="submit" class="btn">Join</button></div></form>',
     { type:'join' }
   );
-  if (!prefill) sheet.querySelector('input.code').focus();
 }
+
+async function joinWith(raw, errorTarget){
+  const id = parseCode(raw);
+  const fail = msg => {
+    if (errorTarget) { const f = sheet.querySelector('form[data-form="join"]'); if (f) { const p = f.querySelector('.err'); p.textContent = msg; p.hidden = false; return; } }
+    toast(msg);
+  };
+  if (!id) { fail('No Basket code found. Codes look like BSKT-XXXX-XXXX-XXXX-XXXX.'); return false; }
+  try {
+    const r = await joinSharedList(id);
+    closeSheet();
+    toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
+    return true;
+  } catch(e) { fail(fbErrorText(e)); return false; }
+}
+async function pasteAndJoin(){
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); }
+  catch(e) { text = ''; }
+  if (!text) {
+    const inp = sheet.querySelector('input.code');
+    if (inp) inp.focus();
+    toast('Hold the box below and choose Paste');
+    return;
+  }
+  const inp = sheet.querySelector('input.code');
+  const id = parseCode(text);
+  if (inp && id) inp.value = formatCode(id);
+  await joinWith(text, true);
+}
+
+/* In-app QR scanner, so codes never have to go through Safari. */
+let scan = null, jsqrLoading = null;
+function loadJsQR(){
+  if (window.jsQR) return Promise.resolve();
+  if (jsqrLoading) return jsqrLoading;
+  jsqrLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script'); s.src = 'jsqr.js';
+    s.onload = () => resolve(); s.onerror = () => { jsqrLoading = null; reject(new Error('scanner')); };
+    document.head.appendChild(s);
+  });
+  return jsqrLoading;
+}
+function stopScan(){
+  if (!scan) return;
+  const sc = scan; scan = null;
+  cancelAnimationFrame(sc.raf);
+  if (sc.stream) sc.stream.getTracks().forEach(t => t.stop());
+}
+async function startScan(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("This phone can't scan here. Use Paste a code instead."); return; }
+  openSheet(
+    '<h2>Scan their code</h2>'
+    + '<p class="sub">Point the camera at the QR code on their phone.</p>'
+    + '<div class="scanbox"><video playsinline muted autoplay></video><div class="frame"></div><p>Looking for a code</p></div>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="scanStop">Cancel</button></div>',
+    { type:'scan' }
+  );
+  const me = scan = { stream:null, raf:0, last:0 };
+  try {
+    const [stream] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false }),
+      loadJsQR()
+    ]);
+    if (scan !== me) { stream.getTracks().forEach(t => t.stop()); return; }
+    me.stream = stream;
+    const video = sheet.querySelector('.scanbox video');
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    const canvas = document.createElement('canvas');
+    const g = canvas.getContext('2d', { willReadFrequently:true });
+    const tick = t => {
+      if (scan !== me) return;
+      me.raf = requestAnimationFrame(tick);
+      if (t - me.last < 120 || !video.videoWidth) return;
+      me.last = t;
+      const w = 640, h = Math.round(video.videoHeight * (w / video.videoWidth));
+      canvas.width = w; canvas.height = h;
+      g.drawImage(video, 0, 0, w, h);
+      const hit = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts:'dontInvert' });
+      if (!hit || !hit.data) return;
+      const id = parseCode(hit.data);
+      if (!id) { sheet.querySelector('.scanbox p').textContent = "That isn't a Basket code"; return; }
+      stopScan();
+      if (navigator.vibrate) navigator.vibrate(30);
+      sheet.querySelector('.scanbox p').textContent = 'Joining';
+      joinWith(id, false).then(ok => { if (!ok) openJoinShared(id); });
+    };
+    me.raf = requestAnimationFrame(tick);
+  } catch(e) {
+    stopScan();
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    openJoinShared('');
+    toast(denied ? 'Camera access was blocked. Allow it when asked, or use Paste a code.' : (e && e.message === 'scanner' ? 'The scanner needs signal the first time. Use Paste a code.' : "Couldn't start the camera. Use Paste a code."));
+  }
+}
+
 function openShowCode(id){
   const shop = shopById(id); if (!isShared(shop)) return;
   const code = formatCode(shop.shared.listId);
@@ -2083,7 +2224,7 @@ function openShowCode(id){
   } catch(e) { svg = ''; }
   openSheet(
     `<h2>Share ${esc(shop.name)}</h2>`
-    + '<p class="sub">On the other phone: Settings, Shared lists, Enter a code. Or scan this with the Camera app.</p>'
+    + '<p class="sub">On their phone, open Basket and tap <strong>+ Add</strong>, then <strong>Join a shared list</strong>, then <strong>Scan their code</strong>.</p>'
     + (svg ? `<div class="qr">${svg}</div>` : '')
     + `<p class="bigcode">${esc(code)}</p>`
     + '<p class="note">Anyone with this code can see and change the list, so only give it to people you want on it.</p>'
@@ -2096,8 +2237,10 @@ function openSafariJoin(listId){
   openSheet(
     '<h2>You have been sent a shared list</h2>'
     + '<p class="sub">Codes are entered inside the Basket app, not in Safari.</p>'
-    + '<ol class="steps"><li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
-    + '<li>Go to Settings, Shared lists, Enter a code.</li><li>Type this code:</li></ol>'
+    + '<ol class="steps"><li>Tap <strong>Copy code</strong> below.</li>'
+    + '<li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
+    + '<li>Tap <strong>+ Add</strong>, <strong>Join a shared list</strong>, then <strong>Paste a code</strong>.</li></ol>'
+    + '<p class="note">Next time, scan from inside Basket instead: + Add, Join a shared list, Scan their code.</p>'
     + `<p class="bigcode">${esc(code)}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="copyCode">Copy code</button></div>',
     { type:'safarijoin', code }
