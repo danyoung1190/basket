@@ -168,6 +168,20 @@ body.is-dragging .row.header.empty{display:flex; padding-top:12px; padding-botto
 .install .glyph svg{width:16px; height:16px}
 .install .warn{margin-top:12px; color:var(--ink); font-size:14px}
 .install .row-btns{display:flex; gap:8px; margin-top:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.icon.spin svg{animation:spin .9s linear infinite}
+.tab .cloud{width:14px; height:14px; margin-left:-2px}
+#ptr{height:0; overflow:hidden; text-align:center; font-size:13px; opacity:.85; transition:height .15s ease}
+#ptr.show{height:22px}
+#ptr.ready{font-weight:700}
+.qr{width:min(240px, 70vw); margin:16px auto 0; padding:10px; background:#fff; border-radius:12px}
+.qr svg{display:block; width:100%; height:auto}
+textarea.field{height:auto; padding:10px 14px; resize:none; width:100%; margin-top:14px; font:14px/1.4 ui-monospace, Menlo, monospace; overflow-wrap:anywhere}
+.lbl{display:block; margin-top:14px; font-size:13px; font-weight:600; color:var(--muted)}
+.lbl .field{display:block; width:100%; margin-top:6px; font:17px var(--ui)}
+.steps{margin:14px 0 0; padding-left:22px; font-size:15px; line-height:1.45}
+.steps li + li{margin-top:6px}
+.err{color:var(--danger)}
 .sug-add .cat{margin-left:auto; font-size:13px; color:var(--muted)}
 
 .row.dragging{z-index:5; background:var(--surface); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.2); transition:none}
@@ -271,12 +285,16 @@ label.btn{cursor:pointer}
 <body>
 <header id="band">
   <nav id="tabs" aria-label="Lists"></nav>
+  <div id="ptr" aria-hidden="true"></div>
   <div class="titlerow">
     <div>
       <h1 id="title">Shopping list</h1>
       <p id="subtitle"></p>
     </div>
     <div class="actions">
+      <button id="btnSync" class="icon" type="button" aria-label="Refresh shared lists" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-14.3 4.9"/><path d="M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></svg>
+      </button>
       <button id="btnShare" class="icon" type="button" aria-label="Share list">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
       </button>
@@ -313,11 +331,12 @@ label.btn{cursor:pointer}
   <div id="toast" role="status" aria-live="polite"></div>
 </div>
 
+<script src="qrcode.js"></script>
 <script>
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -365,6 +384,7 @@ const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const ICON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>';
 const ICON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 const ICON_PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>';
+const ICON_CLOUD = '<svg class="cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Shared"><path d="M7 18a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 9a4.5 4.5 0 0 1 0 9z"/></svg>';
 const ICON_SORT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11"/><path d="m12 4 3 3-3 3"/><path d="M20 17H9"/><path d="m12 14-3 3 3 3"/></svg>';
 
 /* ---------- Helpers ---------- */
@@ -409,6 +429,11 @@ function normalise(s){
     if (!Array.isArray(sh.sections)) sh.sections = [];
     sh.sections = sh.sections.filter(x => x && x.id && x.name);
     if (!sh.color) sh.color = PALETTE[i % PALETTE.length];
+    if (sh.shared) {
+      const x = sh.shared;
+      if (!x.owner || !x.repo || !x.listId || !x.token) delete sh.shared;
+      else if (!Array.isArray(x.tombstones)) x.tombstones = [];
+    }
   });
   const shopIds = new Set(s.shops.map(sh => sh.id));
   s.items = s.items.filter(i => i && i.id && i.name);
@@ -457,6 +482,7 @@ function load(){
 let state = load();
 let askedPersist = false;
 function save(){
+  if (typeof noteSharedChanges === 'function') noteSharedChanges();
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch(e) { toast("Couldn't save. Your phone's storage may be full."); return; }
   if (!askedPersist && state.items.length && navigator.storage && navigator.storage.persist) {
@@ -698,6 +724,7 @@ function moveItem(id, shopId){
   const it = itemById(id); if (!it) return;
   snapshot();
   const target = shopById(shopId);
+  noteLeftShared(it, target ? target.id : null);
   const dup = dupIn(it, target ? target.id : null);
   if (dup) {
     dup.qty = Math.max(dup.qty || 1, it.qty || 1);
@@ -739,6 +766,7 @@ function renameItem(id, raw){
 }
 
 function pushRemoved(it){
+  if (typeof noteLeftShared === 'function') noteLeftShared(it);
   state.removed.unshift(Object.assign({}, it, { removedAt:Date.now() }));
   if (state.removed.length > MAX_REMOVED) state.removed.length = MAX_REMOVED;
 }
@@ -810,6 +838,7 @@ function addShop(raw){
 }
 function deleteShop(id){
   const shop = shopById(id); if (!shop) return;
+  if (isShared(shop)) { leaveSharedList(id); return; }
   snapshot();
   itemsIn(id).forEach(i => { i.shopId = null; i.sectionId = null; i.order = nextOrder(null); });
   state.shops = state.shops.filter(s => s.id !== id);
@@ -851,17 +880,18 @@ function render(){
   $('meta[name="theme-color"]').setAttribute('content', color);
   renderTabs(); renderHeader(); renderList(); renderSuggest(); renderDue(); renderBadge();
   if (typeof renderInstall === 'function') renderInstall();
+  if (typeof renderSyncState === 'function') renderSyncState();
 }
 
 function renderTabs(){
   const count = id => state.items.filter(i => i.shopId === id && !i.done).length;
   const tabs = [{ id:'list', name:'List', color:LIST_COLOR, n:count(null), isList:true }]
-    .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, n:count(s.id) })));
+    .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, n:count(s.id), shared:isShared(s) })));
   tabsEl.innerHTML = tabs.map(t => {
     const active = (t.isList ? state.tab === 'list' : state.tab === t.id);
     return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${esc(t.id)}" style="--c:${t.color}" aria-current="${active ? 'page' : 'false'}">`
       + (t.isList ? '' : '<span class="tdot"></span>')
-      + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}</button>`;
+      + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}${t.shared ? ICON_CLOUD : ''}</button>`;
   }).join('') + '<button type="button" class="tab add" data-act="addShop">+ Shop</button>';
   const active = tabsEl.querySelector('.tab.active');
   if (active && active.scrollIntoView) active.scrollIntoView({ block:'nearest', inline:'nearest' });
@@ -1006,7 +1036,7 @@ function renderDue(){
 
 function renderBadge(){
   const stale = !state.lastBackupAt || (Date.now() - state.lastBackupAt) > 30 * 864e5;
-  $('#badge').hidden = !(state.items.length >= 5 && stale);
+  $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof tokenWarning === 'function' && tokenWarning()));
 }
 
 function flash(id){
@@ -1441,14 +1471,17 @@ function openShopSheet(id){
         + `<button type="button" class="mini" data-act="secDelete" data-sec="${esc(sec.id)}" aria-label="Delete ${esc(sec.name)}">${ICON_X}</button></div>`).join('')
     : '<p class="note">Sections group items by aisle, in the order you walk round the shop. Items file themselves into the right one.</p>'
       + '<button type="button" class="btn primary wide" data-act="addStandard">Add standard sections</button>';
+  const shared = isShared(s);
   openSheet(
-    `<h2>${esc(s.name)}</h2><p class="sub">Shop settings</p>`
-    + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameShop">Rename shop</button></div>'
+    `<h2>${esc(s.name)}</h2><p class="sub">${shared ? 'Shared list. Changes here show on every phone that has joined.' : 'Shop settings'}</p>`
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameShop">Rename</button>'
+    + (shared ? '<button type="button" class="btn primary" data-act="showCode">Show code</button>' : '') + '</div>'
     + `<h3 class="sh-label">Colour</h3><div class="swatches">${sw}</div>`
     + `<h3 class="sh-label">Sections, in walking order</h3>${secs}`
     + '<button type="button" class="btn wide" data-act="addSection">+ Add section</button>'
     + (n ? '<button type="button" class="btn wide" data-act="clearSections">Remove all sections</button>' : '')
-    + '<button type="button" class="btn danger wide" data-act="deleteShop">Delete shop</button>',
+    + (shared ? '<button type="button" class="btn danger wide" data-act="deleteShop">Leave shared list</button>'
+              : '<button type="button" class="btn danger wide" data-act="deleteShop">Delete shop</button>'),
     { type:'shop', id }
   );
 }
@@ -1477,15 +1510,41 @@ function openSettings(){
     + `<p class="note">Last backup: <strong>${esc(ago(state.lastBackupAt))}</strong></p>`
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="backup">Back up now</button>'
     + '<label class="btn">Restore<input type="file" id="restoreInput" accept=".json,application/json" hidden></label></div>'
+    + '<h3 class="sh-label">Sharing</h3>'
+    + (tokenWarning() ? '<p class="note err">A shared list needs attention: its access token has expired or is about to.</p>' : '')
+    + `<button type="button" class="btn wide" style="margin-top:0" data-act="shareHub">Shared lists${sharedShops().length ? ` (${sharedShops().length})` : ''}</button>`
     + `<h3 class="sh-label">Recently removed and cleared</h3>${remHtml}`
     + `<p class="ver">Basket ${APP_VERSION}</p>`,
     { type:'settings' }
   );
 }
 
-sheet.addEventListener('submit', e => {
+sheet.addEventListener('submit', async e => {
   e.preventDefault();
-  if (e.target.dataset.form === 'prompt') runPrompt(e.target.querySelector('input').value);
+  const form = e.target, kind = form.dataset.form;
+  if (kind === 'prompt') { runPrompt(form.querySelector('input').value); return; }
+  if (kind !== 'create' && kind !== 'join') return;
+  form.querySelectorAll('button').forEach(b => b.disabled = true);
+  form.querySelector('.err').hidden = true;
+  try {
+    if (kind === 'create') {
+      const f = new FormData(form);
+      const shop = await createSharedList({ name:clean(f.get('name')) || 'Home', token:String(f.get('token')).trim(), repoName:String(f.get('repo')).trim() });
+      openShowCode(shop.id);
+      toast(`${shop.name} is ready to share`);
+    } else {
+      const r = await joinSharedList(form.querySelector('textarea').value);
+      closeSheet();
+      toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
+    }
+  } catch(err) {
+    let msg = err.message || 'Something went wrong.';
+    if (err.status === 401) msg = 'GitHub rejected the token. Check it was copied in full.';
+    else if (err.status === 404) msg = kind === 'create' ? 'Repository not found. Check the name, and that the token was given access to it.' : 'That list was not found. Ask for a fresh code.';
+    else if (err.status === 403) msg = 'The token is not allowed to do this. It needs Contents: Read and write on that repository.';
+    else if (err.status === 0) msg = 'No signal. Try again when you are online.';
+    showFormError(form, msg);
+  }
 });
 
 sheet.addEventListener('click', e => {
@@ -1595,13 +1654,43 @@ sheet.addEventListener('click', e => {
       else {
         b.dataset.armed = '1'; b.classList.add('armed');
         const n = itemsIn(shop.id).length;
-        b.textContent = n ? `Tap again to delete. ${n} ${n === 1 ? 'item goes' : 'items go'} back to your list.` : 'Tap again to delete';
+        if (isShared(shop)) b.textContent = 'Tap again to leave. The list stays for everyone else.';
+        else b.textContent = n ? `Tap again to delete. ${n} ${n === 1 ? 'item goes' : 'items go'} back to your list.` : 'Tap again to delete';
       }
       break;
 
     case 'backup':
       backup();
       break;
+    case 'shareHub': openShareHub(); break;
+    case 'createStart': openCreateShared(); break;
+    case 'joinStart': openJoinShared(''); break;
+    case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
+    case 'updateToken': {
+      const s2 = shopById(b.dataset.shop); if (!isShared(s2)) break;
+      openPrompt({ title:'New access token', sub:`For ${s2.name}. Other phones pick it up automatically.`, placeholder:'github_pat_...', button:'Save', onSave: v => {
+        s2.shared.token = v.trim(); s2.shared.tokenAt = Date.now(); s2.shared.expiresAt = null; s2.shared.lastError = null;
+        save(); render(); schedulePush(0); openShareHub();
+      }});
+      break;
+    }
+    case 'pasteCode': {
+      const ta = sheet.querySelector('textarea');
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(t => { if (t) ta.value = t; ta.focus(); }, () => { ta.focus(); toast('Hold the box and choose Paste'); });
+      } else { ta.focus(); toast('Hold the box and choose Paste'); }
+      break;
+    }
+    case 'copyCode': {
+      const ta = sheet.querySelector('textarea'); if (ta) copyText(ta.value);
+      break;
+    }
+    case 'sendCode': {
+      const s3 = shopById(ctx.id); if (!isShared(s3)) break;
+      const text = `Join my "${s3.name}" list in Basket.\n\nOpen Basket from your Home Screen, go to Settings, Shared lists, Enter a code, and paste:\n\n${makeCode(s3)}\n\nDon't have Basket yet? ${location.origin}${location.pathname}`;
+      if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text);
+      break;
+    }
     case 'restoreRemoved':
       restoreRemoved(b.dataset.rid); openSettings();
       break;
@@ -1712,8 +1801,413 @@ $('#install').addEventListener('click', async e => {
   }
 });
 
+/* ---------- Shared lists (synced through a private GitHub repo) ----------
+   A shared list is an ordinary shop with a `shared` block:
+     { owner, repo, listId, token, tokenAt, expiresAt, lastSyncAt, lastError, pending, sha,
+       tombstones:[{id, at}], sig, secSig, metaSig }
+   Its items live in state.items like any shop's. The repo holds lists/<listId>.json.
+   Merging is per item by updatedAt; deletions travel as tombstones. */
+const GH = 'https://api.github.com';
+const TOMBSTONE_DAYS = 30;
+const CODE_PREFIX = 'BSKT-';
+const isShared = shop => !!(shop && shop.shared);
+const sharedShops = () => state.shops.filter(isShared);
+
+const utf8ToB64 = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+const b64ToUtf8 = b => new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
+const b64url = s => utf8ToB64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = s => b64ToUtf8(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+
+function makeCode(shop){
+  const sh = shop.shared;
+  return CODE_PREFIX + b64url(JSON.stringify({ v:1, o:sh.owner, r:sh.repo, l:sh.listId, t:sh.token, n:shop.name }));
+}
+function parseCode(raw){
+  let s = String(raw || '').replace(/\s+/g, '');
+  const m = s.match(/#join=([^&]+)/); if (m) s = decodeURIComponent(m[1]);
+  if (!s.toUpperCase().startsWith(CODE_PREFIX)) return null;
+  try {
+    const o = JSON.parse(unb64url(s.slice(CODE_PREFIX.length)));
+    if (!o || !o.o || !o.r || !o.l || !o.t) return null;
+    return { owner:String(o.o), repo:String(o.r), listId:String(o.l), token:String(o.t), name:clean(o.n || 'Shared list') };
+  } catch(e) { return null; }
+}
+const joinUrl = shop => `${location.origin}${location.pathname}#join=${encodeURIComponent(makeCode(shop))}`;
+
+/* GitHub API */
+class GhError extends Error { constructor(status, msg){ super(msg); this.status = status; } }
+async function gh(token, method, path, body){
+  let res;
+  try {
+    res = await fetch(GH + path, {
+      method, cache:'no-store',
+      headers: Object.assign({ Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' },
+        body ? { 'Content-Type':'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch(e) { throw new GhError(0, 'offline'); }
+  const exp = res.headers.get('github-authentication-token-expiration');
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new GhError(res.status, (data && data.message) || `GitHub error ${res.status}`);
+  return { data, expiresAt: exp ? Date.parse(exp.replace(' UTC', 'Z').replace(' ', 'T')) || null : null };
+}
+const listPath = sh => `/repos/${sh.owner}/${sh.repo}/contents/lists/${sh.listId}.json`;
+async function ghGetList(sh){
+  try {
+    const r = await gh(sh.token, 'GET', listPath(sh) + `?t=${Date.now()}`);
+    let doc = null;
+    try { doc = JSON.parse(b64ToUtf8(r.data.content.replace(/\n/g, ''))); } catch(e) { doc = null; }
+    return { doc, sha:r.data.sha, expiresAt:r.expiresAt };
+  } catch(e) {
+    if (e.status === 404) return { doc:null, sha:null, expiresAt:null };
+    throw e;
+  }
+}
+async function ghPutList(sh, doc, sha, message){
+  const body = { message, content:utf8ToB64(JSON.stringify(doc)) };
+  if (sha) body.sha = sha;
+  const r = await gh(sh.token, 'PUT', listPath(sh), body);
+  return { sha:r.data.content.sha, expiresAt:r.expiresAt };
+}
+
+/* Local <-> document */
+const sharedItemFields = i => ({ id:i.id, name:i.name, qty:clampQty(i.qty), sectionId:i.sectionId || null, done:!!i.done,
+  doneAt:i.doneAt || null, order:i.order || 0, addedAt:i.addedAt || 0, updatedAt:i.updatedAt || 0 });
+function buildDoc(shop){
+  const sh = shop.shared;
+  return {
+    v:1, id:sh.listId, name:shop.name, color:shop.color, metaUpdatedAt:sh.metaAt || 0,
+    sections:shop.sections, sectionsUpdatedAt:sh.sectionsAt || 0,
+    items:itemsIn(shop.id).map(sharedItemFields),
+    tombstones:(sh.tombstones || []).slice(),
+    access:{ token:sh.token, updatedAt:sh.tokenAt || 0, expiresAt:sh.expiresAt || null },
+    updatedAt:Date.now()
+  };
+}
+const byIdSort = arr => (arr || []).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+const docSig = d => JSON.stringify([d.name, d.color, d.sections || [], byIdSort((d.items || []).filter(i => i && i.id).map(sharedItemFields)),
+  byIdSort((d.tombstones || []).filter(t => t && t.id)).map(t => [t.id, t.at]), d.access && d.access.token]);
+
+// Called from save(): spot local changes to shared lists and schedule a push.
+function noteSharedChanges(){
+  let dirty = false;
+  sharedShops().forEach(shop => {
+    const sh = shop.shared;
+    const secSig = JSON.stringify(shop.sections), metaSig = shop.name + '|' + shop.color;
+    if (sh.secSig !== undefined && sh.secSig !== secSig) sh.sectionsAt = Date.now();
+    if (sh.metaSig !== undefined && sh.metaSig !== metaSig) sh.metaAt = Date.now();
+    sh.secSig = secSig; sh.metaSig = metaSig;
+    const sig = docSig(buildDoc(shop));
+    if (sh.sig !== sig) { sh.pending = true; dirty = true; }
+  });
+  if (dirty) schedulePush();
+  return dirty;
+}
+// An item is leaving a shared list (removed, cleared, or moved to a private shop).
+function noteLeftShared(item, newShopId){
+  const from = shopById(item.shopId);
+  if (!isShared(from) || newShopId === from.id) return;
+  from.shared.tombstones = (from.shared.tombstones || []).filter(t => t.id !== item.id);
+  from.shared.tombstones.push({ id:item.id, at:Date.now() });
+}
+
+function mergeDoc(shop, remote){
+  const sh = shop.shared;
+  const local = buildDoc(shop);
+  const cutoff = Date.now() - TOMBSTONE_DAYS * DAY;
+  const tomb = new Map();
+  [...(local.tombstones || []), ...((remote && remote.tombstones) || [])].forEach(t => {
+    if (t && t.id && t.at > cutoff && (!tomb.has(t.id) || tomb.get(t.id) < t.at)) tomb.set(t.id, t.at);
+  });
+  const dead = (it) => tomb.has(it.id) && tomb.get(it.id) > (it.updatedAt || 0);
+  const byId = new Map();
+  local.items.forEach(i => { if (!dead(i)) byId.set(i.id, i); });
+  const arrived = [];
+  ((remote && remote.items) || []).forEach(ri => {
+    if (!ri || !ri.id || !ri.name) return;
+    ri = sharedItemFields(ri);
+    if (dead(ri)) return;
+    const li = byId.get(ri.id);
+    if (!li) { byId.set(ri.id, ri); arrived.push(ri); }
+    else if ((ri.updatedAt || 0) > (li.updatedAt || 0)) byId.set(ri.id, ri);
+  });
+  // Items the other phone removed go to this phone's Recently removed, not into thin air.
+  local.items.forEach(i => { if (dead(i) && !(local.tombstones || []).some(t => t.id === i.id)) pushRemoved(Object.assign({ shopId:shop.id }, i)); });
+  if (remote) {
+    if ((remote.sectionsUpdatedAt || 0) > (sh.sectionsAt || 0) && Array.isArray(remote.sections)) {
+      shop.sections = remote.sections.filter(x => x && x.id && x.name); sh.sectionsAt = remote.sectionsUpdatedAt;
+    }
+    if ((remote.metaUpdatedAt || 0) > (sh.metaAt || 0)) {
+      if (remote.name) shop.name = String(remote.name).slice(0, 80);
+      if (remote.color) shop.color = remote.color;
+      sh.metaAt = remote.metaUpdatedAt;
+    }
+    const acc = remote.access;
+    if (acc && acc.token && acc.token !== sh.token && (acc.updatedAt || 0) > (sh.tokenAt || 0)) {
+      sh.token = acc.token; sh.tokenAt = acc.updatedAt; sh.expiresAt = acc.expiresAt || null;
+    }
+  }
+  // Rebuild this shop's items in state, keeping anything not in this shop untouched.
+  const others = state.items.filter(i => i.shopId !== shop.id);
+  const mine = [...byId.values()].map(i => Object.assign({}, i, { shopId:shop.id }));
+  state.items = others.concat(mine);
+  sh.tombstones = [...tomb.entries()].map(([id, at]) => ({ id, at }));
+  sh.secSig = JSON.stringify(shop.sections); sh.metaSig = shop.name + '|' + shop.color;
+  return arrived.length;
+}
+
+/* Sync engine: one run at a time, queued if asked again mid-run. */
+const sync = { running:false, queued:false, timer:0, poll:0, manual:false };
+function schedulePush(delay){
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(() => syncAll(false), delay == null ? 1500 : delay);
+}
+async function syncAll(manual){
+  if (!sharedShops().length) return;
+  if (sync.running) { sync.queued = true; sync.manual = sync.manual || manual; return; }
+  sync.running = true; sync.manual = !!manual;
+  renderSyncState();
+  let arrived = 0, failed = null;
+  for (const shop of sharedShops()) {
+    try { arrived += await syncShop(shop); }
+    catch(e) { failed = e; }
+  }
+  sync.running = false;
+  safeSet(KEY, JSON.stringify(state));
+  render();
+  if (sync.manual) {
+    if (failed) toast(failed.status === 0 ? 'No signal. Changes will send when you\'re back online.' : syncErrorText(failed));
+    else toast(arrived ? `Updated, ${arrived} new ${arrived === 1 ? 'item' : 'items'}` : 'Up to date');
+  }
+  if (sync.queued) { sync.queued = false; const m = sync.manual; sync.manual = false; syncAll(m); }
+}
+async function syncShop(shop){
+  const sh = shop.shared;
+  let arrived = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let got;
+    try { got = await ghGetList(sh); }
+    catch(e) { sh.lastError = e.status === 0 ? 'offline' : (e.status === 401 || e.status === 403 ? 'auth' : 'error'); throw e; }
+    if (got.expiresAt) sh.expiresAt = got.expiresAt;
+    arrived += mergeDoc(shop, got.doc);
+    const doc = buildDoc(shop);
+    const sig = docSig(doc);
+    const remoteSig = got.doc ? docSig(got.doc) : null;
+    if (remoteSig === sig) { sh.sig = sig; sh.pending = false; sh.sha = got.sha; break; }
+    try {
+      const put = await ghPutList(sh, doc, got.sha, `Basket: ${shop.name}`);
+      sh.sig = sig; sh.pending = false; sh.sha = put.sha;
+      if (put.expiresAt) sh.expiresAt = put.expiresAt;
+      break;
+    } catch(e) {
+      if ((e.status === 409 || e.status === 422) && attempt < 2) continue; // someone else wrote first: merge again
+      sh.lastError = e.status === 0 ? 'offline' : (e.status === 401 || e.status === 403 ? 'auth' : 'error');
+      throw e;
+    }
+  }
+  sh.lastError = null; sh.lastSyncAt = Date.now();
+  return arrived;
+}
+function syncErrorText(e){
+  if (!e) return '';
+  if (e.status === 401 || e.status === 403) return 'Sharing has stopped: the access token has expired or been removed. Open Settings to fix it.';
+  if (e.status === 404) return 'The shared list was not found. It may have been deleted from GitHub.';
+  return `Couldn't sync: ${e.message}`;
+}
+function syncStatusText(shop){
+  const sh = shop.shared;
+  if (sync.running) return 'Syncing';
+  if (sh.lastError === 'auth') return 'Sharing stopped, see Settings';
+  if (sh.pending) return sh.lastError === 'offline' ? 'Offline, changes waiting' : 'Changes waiting';
+  if (!sh.lastSyncAt) return 'Not synced yet';
+  const m = Math.round((Date.now() - sh.lastSyncAt) / 60000);
+  return m < 1 ? 'Synced just now' : (m < 60 ? `Synced ${m} min ago` : `Synced ${ago(sh.lastSyncAt).toLowerCase()}`);
+}
+function renderSyncState(){
+  const any = sharedShops().length > 0;
+  $('#btnSync').hidden = !any;
+  $('#btnSync').classList.toggle('spin', sync.running);
+  if (!any) return;
+  const shop = currentShop();
+  if (isShared(shop)) {
+    const base = $('#subtitle').textContent.split('. ')[0];
+    $('#subtitle').textContent = `${base}. ${syncStatusText(shop)}`;
+  }
+}
+// Expiry comes from GitHub when it tells us; otherwise assume the 1 year maximum from when the token was entered.
+const tokenExpiry = sh => sh.expiresAt || (sh.tokenAt ? sh.tokenAt + 365 * DAY : null);
+const tokenWarning = () => sharedShops().some(s => { const e = tokenExpiry(s.shared); return (e && e - Date.now() < 14 * DAY) || s.shared.lastError === 'auth'; });
+
+$('#btnSync').addEventListener('click', () => syncAll(true));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncAll(false); });
+window.addEventListener('online', () => syncAll(false));
+setInterval(() => { if (document.visibilityState === 'visible' && !sync.running) syncAll(false); }, 60000);
+
+/* Pull down to refresh */
+const ptr = $('#ptr');
+let pull = null;
+main.addEventListener('touchstart', e => {
+  if (!sharedShops().length || sheetCtx || drag || window.scrollY > 0 || e.touches.length !== 1) { pull = null; return; }
+  pull = { y0:e.touches[0].clientY, dy:0 };
+}, { passive:true });
+main.addEventListener('touchmove', e => {
+  if (!pull) return;
+  pull.dy = e.touches[0].clientY - pull.y0;
+  if (pull.dy < 10 || window.scrollY > 0) { ptr.classList.remove('show', 'ready'); return; }
+  ptr.classList.add('show'); ptr.classList.toggle('ready', pull.dy > 80);
+  ptr.textContent = pull.dy > 80 ? 'Release to refresh' : 'Pull to refresh';
+}, { passive:true });
+const endPull = () => {
+  const p = pull; pull = null;
+  ptr.classList.remove('show', 'ready');
+  if (p && p.dy > 80 && window.scrollY <= 0) syncAll(true);
+};
+main.addEventListener('touchend', endPull);
+main.addEventListener('touchcancel', endPull);
+
+/* Create, join, leave */
+async function createSharedList({ name, token, repoName }){
+  const me = await gh(token, 'GET', '/user');
+  const owner = me.data.login;
+  const repo = (repoName || 'basket-data').trim();
+  const r = await gh(token, 'GET', `/repos/${owner}/${repo}`); // must exist already
+  if (!r.data.private) throw new GhError(400, `The repository ${owner}/${repo} is public. Make it private first, or pick another.`);
+  const used = new Set(state.shops.map(s => s.color));
+  const color = PALETTE.find(c => !used.has(c)) || PALETTE[state.shops.length % PALETTE.length];
+  const shop = { id:uid(), name, color, sections:[], shared:{
+    owner, repo, listId:uid().replace(/-/g, '').slice(0, 12), token, tokenAt:Date.now(), expiresAt:me.expiresAt || null,
+    lastSyncAt:null, lastError:null, pending:true, sha:null, tombstones:[], sig:null, secSig:'[]', metaSig:name + '|' + color, metaAt:Date.now(), sectionsAt:Date.now()
+  }};
+  state.shops.push(shop);
+  const put = await ghPutList(shop.shared, buildDoc(shop), null, `Basket: create ${name}`);
+  shop.shared.sha = put.sha; shop.shared.sig = docSig(buildDoc(shop)); shop.shared.pending = false; shop.shared.lastSyncAt = Date.now();
+  state.tab = shop.id;
+  save(); render();
+  return shop;
+}
+async function joinSharedList(code){
+  const c = parseCode(code);
+  if (!c) throw new Error('That code is not a Basket sharing code.');
+  const existing = state.shops.find(s => isShared(s) && s.shared.listId === c.listId);
+  if (existing) { state.tab = existing.id; save(); render(); return { shop:existing, already:true }; }
+  const got = await ghGetList(c);
+  if (!got.doc) throw new Error('The shared list was not found. Ask for a fresh code.');
+  const shop = { id:uid(), name:c.name, color:got.doc.color || PALETTE[0], sections:[], shared:{
+    owner:c.owner, repo:c.repo, listId:c.listId, token:c.token, tokenAt:0, expiresAt:got.expiresAt || null,
+    lastSyncAt:null, lastError:null, pending:false, sha:null, tombstones:[], sig:null, secSig:undefined, metaSig:undefined, metaAt:0, sectionsAt:0
+  }};
+  state.shops.push(shop);
+  await syncShop(shop);
+  state.tab = shop.id;
+  save(); render();
+  return { shop, already:false };
+}
+function leaveSharedList(id){
+  const shop = shopById(id); if (!isShared(shop)) return;
+  snapshot();
+  state.items = state.items.filter(i => i.shopId !== id);
+  state.shops = state.shops.filter(s => s.id !== id);
+  if (state.tab === id) state.tab = 'list';
+  save(); render();
+  toast(`Left ${shop.name}. The list still exists for everyone else.`, true);
+}
+
+/* Sheets */
+function openShareHub(){
+  const lists = sharedShops();
+  const rows = lists.map(s => {
+    const sh = s.shared;
+    const e = tokenExpiry(sh);
+    const exp = e ? `Token ${e < Date.now() ? 'expired' : 'expires'} ${new Date(e).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}` : '';
+    return `<div class="secrow"><span class="nm">${esc(s.name)}<small>${esc(syncStatusText(s))}${exp ? '. ' + esc(exp) : ''}</small></span>`
+      + `<button type="button" class="mini text" data-act="showCode" data-shop="${esc(s.id)}">Code</button>`
+      + `<button type="button" class="mini text" data-act="updateToken" data-shop="${esc(s.id)}">Token</button></div>`;
+  }).join('');
+  openSheet(
+    '<h2>Shared lists</h2>'
+    + '<p class="sub">A shared list is a tab everyone with its code can see and edit. Your own shops stay private.</p>'
+    + (rows ? `<h3 class="sh-label">Your shared lists</h3>${rows}` : '')
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="joinStart">Enter a code</button>'
+    + '<button type="button" class="btn primary" data-act="createStart">Create a list</button></div>',
+    { type:'share' }
+  );
+}
+function openCreateShared(){
+  openSheet(
+    '<h2>Create a shared list</h2>'
+    + '<p class="sub">Stored in a private GitHub repository you own. Free, and the data stays yours.</p>'
+    + '<ol class="steps"><li>On github.com create a <strong>private</strong> repository called <strong>basket-data</strong>, with "Add a README" ticked.</li>'
+    + '<li>Make a fine-grained token (Settings, Developer settings) for just that repository with <strong>Contents: Read and write</strong>. Set the expiry to 1 year.</li>'
+    + '<li>Paste the token below.</li></ol>'
+    + '<form data-form="create" autocomplete="off">'
+    + '<label class="lbl">List name<input class="field" name="name" value="Home" maxlength="40" required></label>'
+    + '<label class="lbl">Repository name<input class="field" name="repo" value="basket-data" maxlength="100" required autocapitalize="off" autocorrect="off"></label>'
+    + '<label class="lbl">Access token<input class="field" name="token" placeholder="github_pat_..." required autocapitalize="off" autocorrect="off" spellcheck="false"></label>'
+    + '<p class="note err" hidden></p>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="submit" class="btn primary">Create</button></div></form>',
+    { type:'create' }
+  );
+  sheet.querySelector('input[name="token"]').focus();
+}
+function openJoinShared(prefill){
+  openSheet(
+    '<h2>Join a shared list</h2>'
+    + '<p class="sub">Paste the code the other person sent you, or scan their QR code with your Camera app.</p>'
+    + '<form data-form="join" autocomplete="off">'
+    + `<textarea class="field code" name="code" rows="4" placeholder="BSKT-..." autocapitalize="off" autocorrect="off" spellcheck="false">${esc(prefill || '')}</textarea>`
+    + '<p class="note err" hidden></p>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="pasteCode">Paste</button><button type="submit" class="btn primary">Join</button></div></form>',
+    { type:'join' }
+  );
+  if (!prefill) sheet.querySelector('textarea').focus();
+}
+function openShowCode(id){
+  const shop = shopById(id); if (!isShared(shop)) return;
+  const code = makeCode(shop);
+  let svg = '';
+  try {
+    if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(joinUrl(shop)); q.make(); svg = q.createSvgTag({ cellSize:4, margin:0, scalable:true }); }
+  } catch(e) { svg = ''; }
+  openSheet(
+    `<h2>Share ${esc(shop.name)}</h2>`
+    + '<p class="sub">On the other phone, open Basket from the Home Screen, go to Settings, Shared lists, Enter a code, and paste this. Or scan the QR code with the Camera app.</p>'
+    + (svg ? `<div class="qr">${svg}</div>` : '')
+    + `<textarea class="field code" readonly rows="3" aria-label="Sharing code">${esc(code)}</textarea>`
+    + '<p class="note">Anyone with this code can read and change the list. Only send it to people you want on it.</p>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="copyCode">Copy code</button><button type="button" class="btn primary" data-act="sendCode">Send</button></div>',
+    { type:'code', id }
+  );
+}
+function openSafariJoin(code){
+  openSheet(
+    '<h2>You have been sent a shared list</h2>'
+    + '<p class="sub">Codes are entered inside the Basket app, not in Safari.</p>'
+    + '<ol class="steps"><li>Tap <strong>Copy code</strong>.</li><li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
+    + '<li>Go to Settings, Shared lists, Enter a code, then Paste.</li></ol>'
+    + `<textarea class="field code" readonly rows="3" aria-label="Sharing code">${esc(code)}</textarea>`
+    + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="copyCode">Copy code</button></div>',
+    { type:'safarijoin', code }
+  );
+}
+function showFormError(form, msg){
+  const p = form.querySelector('.err'); p.textContent = msg; p.hidden = false;
+  form.querySelectorAll('button').forEach(b => b.disabled = false);
+}
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); toast('Copied'); }
+  catch(e) { toast('Hold the code and choose Copy'); }
+}
+
 /* ---------- Start ---------- */
 render();
+(function handleJoinLink(){
+  const m = location.hash.match(/#join=([^&]+)/);
+  if (!m) return;
+  const code = decodeURIComponent(m[1]);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (isStandalone()) openJoinShared(code); else openSafariJoin(code);
+})();
+syncAll(false);
 if (loadWarning) toast(loadWarning);
 </script>
 </body>

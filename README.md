@@ -26,10 +26,30 @@ It needs an https web address so the iPhone can install it and use it offline. G
 - **Send to a shop**: hold an item, then tap a shop. "Send N to their usual shops" sorts everything she has sent somewhere before.
 - **Reorder**: drag the handle on the right of an item. Drag it under a section heading, such as Fridge, to file it there.
 - **Tick off**: tap an item. Ticked items go grey at the bottom. Tap **Clear** when she has finished shopping.
-- **Shop settings** (the ... button, or hold a shop's tab): rename it, change its colour, and add sections in the order she walks round the shop.
+- **Shop settings** (the ... button, or hold a shop's tab): rename it, change its colour, and add sections in the order she walks round the shop. Supermarkets start with standard sections; other shops start with none.
 - **Share**: the share button sends the list as text, for example to WhatsApp.
 - **Undo**: every move, removal or clear shows an Undo button for 6 seconds.
 - **Recently removed**: open Settings to restore anything that was removed or cleared.
+
+## Sharing a list between phones
+
+A shared list is an extra tab (for example "Home") that every phone with its code can see and edit. Your own shops stay private. It syncs through a private GitHub repository you own, so it's free and the data stays yours.
+
+**One-off setup (about 5 minutes, on the computer):**
+1. On github.com click **+ > New repository**. Name it `basket-data`, choose **Private**, tick **Add a README**, click Create.
+2. Make an access token: your profile picture > **Settings** > **Developer settings** (bottom of the left menu) > **Personal access tokens** > **Fine-grained tokens** > **Generate new token**.
+   - Name: Basket. Expiration: **Custom**, one year from today.
+   - Repository access: **Only select repositories** > `basket-data`.
+   - Permissions > Repository permissions > **Contents: Read and write**. Nothing else.
+   - Click Generate, then copy the token (it starts `github_pat_`). You only see it once, so paste it somewhere safe, for example a note to yourself.
+3. In Basket on your phone: Settings > **Shared lists** > **Create a list**. Paste the token and tap Create.
+4. It shows a QR code and a long code. On the other phone, either scan the QR with the Camera app and follow the steps, or send the code (the Send button) and in Basket go to Settings > Shared lists > **Enter a code** > Paste > Join.
+
+**Day to day:** it syncs when the app opens, after each change, and every minute while open. Pull the list down or tap the refresh arrows to sync now. With no signal, changes queue and send later. If two people change the same list, both changes are kept. Anything the other person removes lands in your Recently removed.
+
+**Each year:** the token expires. Settings shows a yellow dot two weeks before. Make a new token the same way, then Settings > Shared lists > **Token** and paste it. Other phones pick it up on their next sync.
+
+**Note:** a backup file includes the sharing code, so treat it like a password.
 
 ## Important things to know
 
