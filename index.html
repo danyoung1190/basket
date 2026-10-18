@@ -28,7 +28,10 @@
   }
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent}
+/* A long hold must never start iPhone text selection; only typing boxes stay selectable. */
+body{-webkit-user-select:none; user-select:none; -webkit-touch-callout:none}
+input, textarea{-webkit-user-select:text; user-select:text; -webkit-touch-callout:default}
 body{
   margin:0; background:var(--bg); color:var(--ink);
   font:17px/1.35 var(--ui); touch-action:manipulation;
@@ -156,6 +159,15 @@ body.is-dragging .row.header.empty{display:flex; padding-top:12px; padding-botto
 .due-head span{font:700 16px var(--round)}
 .due-skip{border:0; background:none; color:var(--muted); font-size:14px; font-weight:600; padding:6px 4px}
 .due-all{width:100%; margin-top:12px; height:46px}
+.install{margin:14px 16px 0; padding:16px; border-radius:16px; background:var(--surface); border:1.5px solid var(--accent)}
+.install h2{margin:0 0 4px; font:700 18px/1.2 var(--round)}
+.install p{margin:0; color:var(--muted); font-size:15px}
+.install ol{margin:12px 0 0; padding-left:22px; font-size:16px; line-height:1.45}
+.install li + li{margin-top:6px}
+.install .glyph{display:inline-grid; place-items:center; width:26px; height:26px; margin:0 2px; vertical-align:-7px; border-radius:7px; background:var(--chip); color:#0A7AFF}
+.install .glyph svg{width:16px; height:16px}
+.install .warn{margin-top:12px; color:var(--ink); font-size:14px}
+.install .row-btns{display:flex; gap:8px; margin-top:14px}
 .sug-add .cat{margin-left:auto; font-size:13px; color:var(--muted)}
 
 .row.dragging{z-index:5; background:var(--surface); border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.2); transition:none}
@@ -175,30 +187,41 @@ body.is-dragging{cursor:grabbing}
 .empty .btn{margin:18px auto 0; max-width:240px}
 
 /* Toast */
+/* Overlays sit in a layer sized to the visible screen (set from visualViewport in JS), because
+   iPhone Home Screen apps place position:fixed + bottom:0 too low. It also lifts them above the keyboard. */
+#layer{position:fixed; left:0; right:0; top:0; height:100%; height:var(--vvh, 100%); z-index:40; pointer-events:none}
+#layer > *{pointer-events:auto}
 #toast{
-  position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 18px); z-index:60;
-  transform:translate(-50%, 160%); transition:transform .25s ease;
+  position:absolute; left:50%; bottom:calc(max(env(safe-area-inset-bottom), 12px) + 14px); z-index:60;
+  transform:translate(-50%, calc(100% + 60px)); visibility:hidden;
+  transition:transform .25s ease, visibility 0s linear .25s;
   display:flex; align-items:center; gap:18px; max-width:calc(100% - 32px); width:max-content;
   padding:12px 12px 12px 18px; border-radius:16px; background:var(--toast-bg); color:var(--toast-ink);
   font-size:15px; box-shadow:0 8px 24px rgba(0,0,0,.25);
 }
-#toast.show{transform:translate(-50%, 0)}
+#toast.show{transform:translate(-50%, 0); visibility:visible; transition:transform .25s ease}
+#layer{overflow:hidden}
 #toast button{border:0; background:none; color:var(--toast-act); font-weight:700; padding:6px 8px}
 #toast:not(:has(button)){padding-right:18px}
 
 /* Bottom sheet */
-#backdrop{position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.38); opacity:0; transition:opacity .25s ease}
+#backdrop{position:absolute; inset:0; z-index:40; background:rgba(0,0,0,.38); opacity:0; transition:opacity .25s ease}
 #backdrop.open{opacity:1}
 #sheet{
-  position:fixed; left:0; right:0; bottom:0; z-index:50; max-width:640px; margin:0 auto;
-  max-height:88vh; max-height:88dvh; overflow-y:auto; overscroll-behavior:contain;
+  position:absolute; left:0; right:0; bottom:0; z-index:50; max-width:640px; margin:0 auto;
+  max-height:90%; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
   background:var(--surface); border-radius:22px 22px 0 0;
-  padding:8px 16px calc(env(safe-area-inset-bottom) + 22px);
+  padding:0 16px calc(max(env(safe-area-inset-bottom), 12px) + 22px);
   transform:translateY(100%); transition:transform .28s cubic-bezier(.2,.8,.2,1);
 }
 #sheet.open{transform:translateY(0)}
+#sheet.swiping, #backdrop.swiping{transition:none}
 #sheet:focus{outline:none}
-.grabber{width:38px; height:5px; border-radius:3px; background:var(--line); margin:2px auto 14px}
+.sheet-top{position:sticky; top:0; z-index:2; height:30px; margin:0 -16px 6px; background:var(--surface); display:grid; place-items:center; touch-action:none}
+.grabber{width:40px; height:5px; border-radius:3px; background:var(--ring)}
+.sheet-close{position:absolute; right:10px; top:6px; width:36px; height:36px; border:0; border-radius:18px; background:var(--chip); color:var(--muted); display:grid; place-items:center}
+.sheet-close svg{width:16px; height:16px}
+#sheet h2{padding-right:34px}
 #sheet h2{margin:0; font:700 23px/1.15 var(--round); overflow-wrap:anywhere}
 #sheet .sub{margin:4px 0 0; color:var(--muted); font-size:15px}
 .sh-label{margin:22px 0 9px; font-size:13px; font-weight:600; color:var(--muted)}
@@ -269,6 +292,7 @@ label.btn{cursor:pointer}
 </header>
 
 <main>
+  <div id="install"></div>
   <form id="addForm" autocomplete="off">
     <input id="addInput" class="field" type="text" enterkeyhint="enter" autocapitalize="sentences" autocorrect="on" spellcheck="true" placeholder="Add to your list" aria-label="Add an item" maxlength="80">
     <button id="addBtn" type="submit" aria-label="Add item">
@@ -283,15 +307,17 @@ label.btn{cursor:pointer}
   <div id="empty"></div>
 </main>
 
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="backdrop" hidden></div>
-<section id="sheet" role="dialog" aria-modal="true" tabindex="-1" hidden></section>
+<div id="layer">
+  <div id="backdrop" hidden></div>
+  <section id="sheet" role="dialog" aria-modal="true" tabindex="-1" hidden></section>
+  <div id="toast" role="status" aria-live="polite"></div>
+</div>
 
 <script>
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -501,6 +527,9 @@ function placeFor(name, shop){
   if (h && h.shopId === shop.id && sectionOf(shop, h.sectionId)) return h.sectionId;
   return sectionForCategory(shop, categoryFor(name));
 }
+
+const GROCERS = ['tesco','sainsbury','asda','aldi','lidl','morrison','m&s','marks','waitrose','coop','iceland','ocado','costco','spar','farmfoods','budgens','booths','supermarket','grocer'];
+const isGrocer = name => GROCERS.some(g => fold(name).replace(/ /g, '').includes(g));
 
 function usualShop(name){
   const h = state.history[key(name)];
@@ -773,7 +802,9 @@ function addShop(raw){
   if (existing) return existing;
   const used = new Set(state.shops.map(s => s.color));
   const color = PALETTE.find(c => !used.has(c)) || PALETTE[state.shops.length % PALETTE.length];
-  const shop = { id:uid(), name, color, sections: STANDARD_SECTIONS.map(n => ({ id:uid(), name:n })) };
+  // Supermarkets start with the standard aisles; other shops (B&Q, Boots...) start empty.
+  const sections = isGrocer(name) ? STANDARD_SECTIONS.map(n => ({ id:uid(), name:n })) : [];
+  const shop = { id:uid(), name, color, sections };
   state.shops.push(shop);
   return shop;
 }
@@ -819,6 +850,7 @@ function render(){
   document.documentElement.style.setProperty('--accent', color);
   $('meta[name="theme-color"]').setAttribute('content', color);
   renderTabs(); renderHeader(); renderList(); renderSuggest(); renderDue(); renderBadge();
+  if (typeof renderInstall === 'function') renderInstall();
 }
 
 function renderTabs(){
@@ -1217,7 +1249,9 @@ const sheet = $('#sheet'), backdrop = $('#backdrop');
 let sheetCtx = null, closeTok = 0, lastHoldAt = 0;
 function openSheet(html, ctx){
   closeTok++;
-  sheet.innerHTML = '<div class="grabber" aria-hidden="true"></div>' + html;
+  sheet.innerHTML = '<div class="sheet-top"><div class="grabber" aria-hidden="true"></div>'
+    + `<button type="button" class="sheet-close" data-act="cancel" aria-label="Close">${ICON_X}</button></div>` + html;
+  sheet.scrollTop = 0;
   sheetCtx = ctx;
   sheet.hidden = false; backdrop.hidden = false;
   document.body.classList.add('sheet-open');
@@ -1238,6 +1272,61 @@ function closeSheet(){
 // Ignore the finger lifting off a long press, which can land on the backdrop.
 backdrop.addEventListener('click', () => { if (Date.now() - lastHoldAt > 450) closeSheet(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetCtx) closeSheet(); });
+
+/* Swipe down to close. Starts from the handle, or anywhere once the sheet is scrolled to the top. */
+let swipe = null, lastSwipeAt = 0;
+sheet.addEventListener('touchstart', e => {
+  if (e.touches.length !== 1 || !sheetCtx) { swipe = null; return; }
+  const y = e.touches[0].clientY;
+  swipe = { y0:y, last:y, lastT:Date.now(), v:0, dy:0, active:false,
+    fromTop: !!e.target.closest('.sheet-top') || sheet.scrollTop <= 0 };
+}, { passive:true });
+sheet.addEventListener('touchmove', e => {
+  if (!swipe || !swipe.fromTop) return;
+  const y = e.touches[0].clientY, dy = y - swipe.y0;
+  if (!swipe.active) {
+    if (dy < -6) { swipe = null; return; }   // moving up: let the sheet scroll
+    if (dy < 8) return;                        // not decided yet
+    swipe.active = true;
+    sheet.classList.add('swiping'); backdrop.classList.add('swiping');
+    if (sheet.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
+  }
+  e.preventDefault();
+  const now = Date.now();
+  swipe.v = (y - swipe.last) / Math.max(1, now - swipe.lastT);
+  swipe.last = y; swipe.lastT = now;
+  swipe.dy = Math.max(0, dy - 8);
+  sheet.style.transform = `translateY(${swipe.dy}px)`;
+  backdrop.style.opacity = String(Math.max(0, 1 - swipe.dy / Math.max(200, sheet.offsetHeight)));
+}, { passive:false });
+function endSwipe(){
+  const s = swipe; swipe = null;
+  if (!s || !s.active) return;
+  lastSwipeAt = Date.now();
+  sheet.classList.remove('swiping'); backdrop.classList.remove('swiping');
+  const close = s.dy > Math.min(120, sheet.offsetHeight * 0.3) || (s.v > 0.5 && s.dy > 20);
+  if (close) closeSheet();
+  // Clearing the inline position in the same frame animates from where the finger let go.
+  sheet.style.transform = ''; backdrop.style.opacity = '';
+}
+sheet.addEventListener('touchend', endSwipe);
+sheet.addEventListener('touchcancel', endSwipe);
+
+/* Keep the overlay layer matched to the visible screen (and above the keyboard). */
+const layer = $('#layer');
+function fitLayer(){
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  layer.style.setProperty('--vvh', `${Math.round(h)}px`);
+  layer.style.transform = vv && vv.offsetTop ? `translateY(${Math.round(vv.offsetTop)}px)` : '';
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', fitLayer);
+  visualViewport.addEventListener('scroll', fitLayer);
+}
+window.addEventListener('resize', fitLayer);
+window.addEventListener('orientationchange', () => setTimeout(fitLayer, 300));
+fitLayer();
 
 function destBtn(id, name, color, usual){
   return `<button type="button" class="destbtn${usual ? ' usual' : ''}" data-act="moveTo" data-shop="${esc(id)}" style="--c:${color}">`
@@ -1358,6 +1447,7 @@ function openShopSheet(id){
     + `<h3 class="sh-label">Colour</h3><div class="swatches">${sw}</div>`
     + `<h3 class="sh-label">Sections, in walking order</h3>${secs}`
     + '<button type="button" class="btn wide" data-act="addSection">+ Add section</button>'
+    + (n ? '<button type="button" class="btn wide" data-act="clearSections">Remove all sections</button>' : '')
     + '<button type="button" class="btn danger wide" data-act="deleteShop">Delete shop</button>',
     { type:'shop', id }
   );
@@ -1399,6 +1489,7 @@ sheet.addEventListener('submit', e => {
 });
 
 sheet.addEventListener('click', e => {
+  if (Date.now() - lastSwipeAt < 350) return;
   const b = e.target.closest('[data-act]'); if (!b || !sheetCtx) return;
   const ctx = sheetCtx, act = b.dataset.act;
   const item = ctx.type === 'item' ? itemById(ctx.id) : null;
@@ -1485,6 +1576,19 @@ sheet.addEventListener('click', e => {
       toast(`Deleted ${sec.name}`, true);
       break;
     }
+    case 'clearSections':
+      if (!shop) break;
+      if (b.dataset.armed) {
+        snapshot();
+        shop.sections = [];
+        itemsIn(shop.id).forEach(i => { i.sectionId = null; });
+        save(); render(); openShopSheet(shop.id);
+        toast('Sections removed', true);
+      } else {
+        b.dataset.armed = '1'; b.classList.add('danger', 'armed');
+        b.textContent = 'Tap again to remove all sections';
+      }
+      break;
     case 'deleteShop':
       if (!shop) break;
       if (b.dataset.armed) { deleteShop(shop.id); closeSheet(); }
@@ -1570,6 +1674,43 @@ window.addEventListener('storage', e => {
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
+
+/* ---------- Install guide ----------
+   Apple doesn't let a website add itself to the Home Screen, so on iPhone we show the steps.
+   Android/Chrome can install with one tap via beforeinstallprompt. */
+const isStandalone = () => navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const SHARE_GLYPH = '<span class="glyph" aria-label="Share"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></span>';
+let installPrompt = null, installHidden = false;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; installHidden = true; renderInstall(); });
+function renderInstall(){
+  const el = $('#install');
+  if (isStandalone() || installHidden || (!isIOS && !installPrompt)) { el.innerHTML = ''; return; }
+  const moving = state.items.length
+    ? '<p class="warn">Your list here won\'t carry over to the app. To keep it, tap Settings, then Back up now, and Restore it inside the app.</p>' : '';
+  if (installPrompt) {
+    el.innerHTML = '<section class="install"><h2>Install Basket</h2><p>It opens like an app and works with no signal.</p>' + moving
+      + '<div class="row-btns"><button type="button" class="btn" data-act="installLater">Not now</button>'
+      + '<button type="button" class="btn primary" data-act="installNow">Install</button></div></section>';
+    return;
+  }
+  el.innerHTML = '<section class="install"><h2>Add Basket to your Home Screen</h2>'
+    + '<p>It then opens like an app and works with no signal.</p><ol>'
+    + `<li>Tap Share ${SHARE_GLYPH} in Safari. If you can't see it, tap ••• first.</li>`
+    + '<li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>'
+    + '<li>Tap <strong>Add</strong>, then open Basket from your Home Screen.</li></ol>' + moving
+    + '<div class="row-btns"><button type="button" class="btn" data-act="installLater">Not now</button></div></section>';
+}
+$('#install').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'installLater') { installHidden = true; renderInstall(); }
+  if (b.dataset.act === 'installNow' && installPrompt) {
+    installPrompt.prompt();
+    try { await installPrompt.userChoice; } catch(_) {}
+    installPrompt = null; renderInstall();
+  }
+});
 
 /* ---------- Start ---------- */
 render();

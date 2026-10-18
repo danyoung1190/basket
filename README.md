@@ -11,7 +11,7 @@ It needs an https web address so the iPhone can install it and use it offline. G
 3. Go to **Settings > Pages**. Under **Branch**, choose `main` and `/ (root)`, then click Save.
 4. After about a minute, the site will be at `https://YOUR-USERNAME.github.io/basket/`
 
-## 2. Install it on her iPhone
+## 2. Install it on her iPhone (the app also shows these steps when opened in Safari)
 
 1. Open that address in **Safari**. It must be Safari.
 2. Tap **Share > Add to Home Screen > Add**.
