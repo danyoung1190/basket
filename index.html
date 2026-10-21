@@ -232,25 +232,27 @@ body.is-dragging{cursor:grabbing}
 }
 #toast.show{transform:translate(-50%, 0); visibility:visible; transition:transform .25s ease}
 #layer{overflow:hidden}
-/* Trolley dock: a trolley parked at the bottom; ticked items drop into it, swipe up to look inside */
-#dock{position:absolute; left:0; right:0; bottom:0; z-index:35; max-width:640px; margin:0 auto;
-  height:calc(max(env(safe-area-inset-bottom), 10px) + 92px); padding-top:8px;
-  background:var(--surface); border-radius:22px 22px 0 0; box-shadow:0 -6px 24px rgba(0,0,0,.10);
-  touch-action:none; user-select:none; -webkit-user-select:none; cursor:pointer;
-  transition:transform .2s ease, opacity .2s ease}
-#dock .grabber{margin:0 auto 4px}
-#dock .cart{display:block; margin:0 auto; width:150px; height:70px; color:var(--accent); overflow:visible}
-#dock .cart .body{fill:color-mix(in srgb, var(--accent) 18%, var(--surface)); fill-opacity:.4}
-#dock .tcount{position:absolute; top:22px; left:calc(50% + 62px); min-width:26px; height:26px; padding:0 7px; border-radius:13px;
-  background:var(--accent); color:#fff; font:700 14px/26px var(--ui); text-align:center}
+/* Trolley: a whole trolley parked across the bottom of the screen, seen from the side and a little above.
+   Ticked items drop over the rail into it and stand inside. Swipe up (or tap) to look inside. */
+#dock{position:absolute; left:0; right:0; bottom:0; z-index:35; height:calc(max(env(safe-area-inset-bottom), 6px) + 158px);
+  pointer-events:none !important; transition:transform .25s ease, opacity .2s ease;
+  background:linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent) 0, color-mix(in srgb, var(--bg) 92%, transparent) 22%, var(--bg) 34%)}
+#dock .hit{position:absolute; left:0; right:0; top:30px; bottom:0; pointer-events:auto; touch-action:none; cursor:pointer;
+  user-select:none; -webkit-user-select:none}
+#dock svg.trolley{position:absolute; left:0; bottom:max(env(safe-area-inset-bottom), 6px); width:100%; height:150px; overflow:visible; pointer-events:none}
+#dock .chip{position:absolute; right:14px; top:0; height:28px; padding:0 12px 0 10px; border-radius:14px; background:var(--accent); color:#fff;
+  display:flex; align-items:center; gap:4px; font:600 13px/1 var(--ui); box-shadow:0 4px 12px rgba(0,0,0,.18); pointer-events:none; white-space:nowrap}
+#dock .chip svg{width:14px; height:14px}
 #dock .tcount:empty{display:none}
-#dock .hint{position:absolute; top:26px; left:16px; right:calc(50% + 82px); font-size:13px; line-height:1.3; color:var(--muted); text-align:right}
 #dock.drag{transition:none}
-body.typing #dock, body.sheet-open #dock{transform:translateY(110%); opacity:0; pointer-events:none}
-#layer.with-trolley #toast{bottom:calc(max(env(safe-area-inset-bottom), 10px) + 104px)}
-body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 150px)}
-.good{transform-box:fill-box; transform-origin:50% 100%}
+.trolley .wheel, .trolley .good{transform-box:fill-box; transform-origin:50% 50%}
+.trolley .good{transform-origin:50% 100%}
+body.typing #dock, body.sheet-open #dock{transform:translateY(110%); opacity:0}
+#layer.with-trolley #toast{bottom:calc(max(env(safe-area-inset-bottom), 6px) + 166px)}
+body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 190px)}
 .trolley-list .row.item{padding-right:16px}
+:root{--chrome-hi:#EEF2F4; --chrome-mid:#A3ADB3; --chrome-lo:#6F7A80; --wire:#9AA4AA; --wire-back:#C9D0D4; --tyre:#2E3438}
+@media (prefers-color-scheme:dark){ :root{--chrome-hi:#DDE3E6; --chrome-mid:#8E989E; --chrome-lo:#5E686E; --wire:#7F898F; --wire-back:#3E464B; --tyre:#4A535A} }
 .flyer{position:fixed; z-index:70; height:36px; padding:0 14px; border-radius:18px; background:var(--accent); color:#fff;
   font:600 15px/36px var(--ui); white-space:nowrap; max-width:60vw; overflow:hidden; text-overflow:ellipsis; pointer-events:none;
   box-shadow:0 6px 16px rgba(0,0,0,.2); will-change:transform}
@@ -377,20 +379,10 @@ label.btn{cursor:pointer}
   <div id="backdrop" hidden></div>
   <section id="sheet" role="dialog" aria-modal="true" tabindex="-1" hidden></section>
   <div id="toast" role="status" aria-live="polite"></div>
-  <div id="dock" role="button" tabindex="0" aria-label="Your trolley" hidden>
-    <div class="grabber" aria-hidden="true"></div>
-    <span class="hint">Swipe up</span>
-    <svg class="cart" viewBox="0 0 150 70" aria-hidden="true">
-      <g class="goods"></g>
-      <path class="body" d="M26 18 H142 L128 48 H38 Z"/>
-      <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 8 H16 L26 18 H142 L128 48 H38 L26 18"/>
-        <path d="M50 18 L53 48 M70 18 L71 48 M90 18 L89 48 M110 18 L107 48 M32 33 H135" stroke-width="1.8" opacity=".55"/>
-        <path d="M38 48 L36 56 H126"/>
-      </g>
-      <g fill="currentColor"><circle cx="46" cy="62" r="5"/><circle cx="118" cy="62" r="5"/></g>
-    </svg>
-    <span class="tcount"></span>
+  <div id="dock" hidden>
+    <svg class="trolley" aria-hidden="true"></svg>
+    <div class="hit" role="button" tabindex="0" aria-label="Your trolley"></div>
+    <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg><span class="tcount"></span><span class="hint"></span></div>
   </div>
 </div>
 
@@ -400,7 +392,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1478,7 +1470,7 @@ if (window.visualViewport) {
   visualViewport.addEventListener('resize', fitLayer);
   visualViewport.addEventListener('scroll', fitLayer);
 }
-window.addEventListener('resize', fitLayer);
+window.addEventListener('resize', () => { fitLayer(); if (typeof drawTrolley === 'function' && !dock.hidden) drawTrolley(); });
 window.addEventListener('orientationchange', () => setTimeout(fitLayer, 300));
 fitLayer();
 
@@ -2465,22 +2457,116 @@ const GOOD_COLOURS = { 'Fruit & veg':'#6DBE5A', 'Bakery':'#D9A05B', 'Meat & poul
   'Snacks & sweets':'#B05BD9', 'Soft drinks':'#3F8CFF', 'Beer, wine & spirits':'#8E2B45', 'Household':'#7FA7D9', 'Toiletries & beauty':'#F0A6CA',
   'Health & medicine':'#5CC3B0', 'Baby':'#FFD38A', 'Pets':'#9C7F5F' };
 const trolleyItems = () => tabItems().filter(i => i.done && !flying.has(i.id)).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
-// Draw the shopping inside the basket: one little package per item, tallest peeking over the rim.
-function renderGoods(newId){
-  const g = dock.querySelector('.goods');
-  const items = trolleyItems().slice(-12);
-  const slots = 12, left = 34, width = 100;
-  g.innerHTML = items.map((it, i) => {
-    const seed = [...it.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-    const w = 9 + seed % 5, h = 20 + (seed >> 3) % 16; // tallest ones poke over the rim
-    const x = left + (i % slots) * (width / slots) + ((seed >> 7) % 3) - 1;
-    const y = 47 - h - (i >= slots ? 6 : 0);
-    const col = GOOD_COLOURS[categoryFor(it.name)] || '#F5A524';
-    const rx = (seed >> 5) % 2 ? 4 : 2;
-    return `<rect class="good${it.id === newId ? ' landing' : ''}" x="${x.toFixed(1)}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${col}" stroke="rgba(0,0,0,.18)" stroke-width="1"/>`;
-  }).join('');
-  const landed = g.querySelector('.landing');
-  if (landed && landed.animate) landed.animate([{ transform:'translateY(-14px) scaleY(1.1)' }, { transform:'translateY(1px) scaleY(.9)', offset:.7 }, { transform:'none' }], { duration:260, easing:'ease-in' });
+// ----- Trolley drawing (SVG, redrawn to the real screen width) -----
+const TH = 150;               // drawing height
+const FLOOR = 116;            // basket floor (where packages stand)
+const RIM = 54;               // front top rail
+function trolleyGeom(W){
+  return { W, backL:62, backR:W - 22, frontL:70, frontR:W - 30, botL:86, botR:W - 58, inL:92, inR:W - 64 };
+}
+// Where each package stands: spread along the basket floor; a second row stands behind, half a step along.
+function goodSlot(i, W){
+  const g = trolleyGeom(W), step = 30;
+  const perRow = Math.max(5, Math.floor((g.inR - g.inL) / step));
+  const row = Math.floor(i / perRow) % 2;
+  return { x: g.inL + 10 + (i % perRow) * step + (row ? step / 2 : 0), back: row === 1 };
+}
+const SHAPES = { 'Fruit & veg':'fruit', 'Bakery':'bread', 'Meat & poultry':'tray', 'Fish & seafood':'tray', 'Dairy & eggs':'carton',
+  'Cheese':'block', 'Chilled & deli':'tub', 'Frozen':'box', 'Herbs & spices':'jar', 'Pasta, rice & grains':'bag', 'Tins & jars':'tin',
+  'Sauces & condiments':'bottle', 'Baking':'bag', 'Breakfast & spreads':'box', 'Tea & coffee':'box', 'World foods':'jar', 'Snacks & sweets':'crisps',
+  'Soft drinks':'bottle', 'Beer, wine & spirits':'wine', 'Household':'spray', 'Toiletries & beauty':'pump', 'Health & medicine':'box', 'Baby':'tub', 'Pets':'bag' };
+const seedOf = id => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+function packageSvg(it, x, newId){
+  const cat = categoryFor(it.name), shape = SHAPES[cat] || 'box', s = seedOf(it.id);
+  const col = GOOD_COLOURS[cat] || '#F5A524', y = FLOOR;
+  const lbl = 'rgba(255,255,255,.72)', edge = 'rgba(0,0,0,.16)', shade = 'rgba(0,0,0,.10)';
+  let d = '';
+  switch (shape) {
+    case 'fruit': { const r = 9 + s % 4; const c2 = ['#6DBE5A','#D6544F','#F2A93B','#F2D04B'][s % 4];
+      d = `<circle cx="${x - 5}" cy="${y - r}" r="${r}" fill="${c2}" stroke="${edge}"/><circle cx="${x + 7}" cy="${y - r + 2}" r="${r - 2}" fill="${col}" stroke="${edge}"/>`
+        + `<path d="M${x - 5} ${y - 2 * r} q2 -5 5 -6" stroke="#5B3A1E" stroke-width="2" fill="none"/>`; break; }
+    case 'bread':
+      if (s % 2) { d = `<rect x="${x - 7}" y="${y - 92}" width="14" height="92" rx="7" fill="${col}" stroke="${edge}" transform="rotate(${10 + s % 12} ${x} ${y})"/>`
+        + `<path d="M${x - 3} ${y - 80} l6 -4 M${x - 3} ${y - 62} l6 -4 M${x - 3} ${y - 44} l6 -4" stroke="rgba(255,255,255,.45)" stroke-width="2" transform="rotate(${10 + s % 12} ${x} ${y})"/>`; }
+      else d = `<path d="M${x - 15} ${y} V${y - 26} q15 -16 30 0 V${y} Z" fill="${col}" stroke="${edge}"/><path d="M${x - 8} ${y - 30} l4 6 M${x} ${y - 33} l4 6 M${x + 8} ${y - 30} l-2 6" stroke="rgba(255,255,255,.45)" stroke-width="2"/>`;
+      break;
+    case 'carton': if (s % 3 === 0) { // egg box
+        d = `<rect x="${x - 17}" y="${y - 20}" width="34" height="20" rx="4" fill="#C9B48F" stroke="${edge}"/>`
+          + [ -11, 0, 11 ].map(o => `<circle cx="${x + o}" cy="${y - 20}" r="5" fill="#C9B48F" stroke="${edge}"/>`).join(''); }
+      else d = `<path d="M${x - 12} ${y} V${y - 50} l5 -10 h14 l5 10 V${y} Z" fill="#F7F4EC" stroke="#D3CCBC"/><path d="M${x - 7} ${y - 60} h14 v-4 h-14 Z" fill="#D3CCBC"/>`
+        + `<rect x="${x - 12}" y="${y - 38}" width="24" height="12" fill="${['#5BA4D9','#D6544F','#6DBE5A'][s % 3]}"/>`;
+      break;
+    case 'wine': d = `<path d="M${x - 8} ${y} V${y - 48} q0 -10 5 -14 V${y - 80} h6 v18 q5 4 5 14 V${y} Z" fill="${col}" stroke="${edge}"/>`
+      + `<rect x="${x - 6}" y="${y - 40}" width="12" height="14" rx="1.5" fill="#F4E9D8"/><rect x="${x - 3}" y="${y - 84}" width="6" height="6" fill="#C8A04B"/>`; break;
+    case 'bottle': d = `<path d="M${x - 10} ${y} V${y - 46} q0 -8 6 -11 V${y - 66} h8 v9 q6 3 6 11 V${y} Z" fill="${col}" stroke="${edge}"/>`
+      + `<rect x="${x - 4}" y="${y - 72}" width="8" height="7" rx="1.5" fill="#333"/><rect x="${x - 10}" y="${y - 36}" width="20" height="14" fill="${lbl}"/>`; break;
+    case 'spray': d = `<path d="M${x - 10} ${y} V${y - 50} q0 -6 6 -6 h8 q6 0 6 6 V${y} Z" fill="${col}" stroke="${edge}"/><path d="M${x - 3} ${y - 56} v-10 h12 l4 4 h-8 v6 Z" fill="#fff" stroke="${edge}"/>`
+      + `<rect x="${x - 10}" y="${y - 38}" width="20" height="12" fill="${lbl}"/>`; break;
+    case 'pump': d = `<rect x="${x - 10}" y="${y - 50}" width="20" height="50" rx="5" fill="${col}" stroke="${edge}"/><path d="M${x - 2} ${y - 50} v-10 h10 v3 h-6 v7 Z" fill="#fff" stroke="${edge}"/>`
+      + `<rect x="${x - 10}" y="${y - 34}" width="20" height="12" fill="${lbl}"/>`; break;
+    case 'tin': d = `<rect x="${x - 11}" y="${y - 30}" width="22" height="30" fill="${col}" stroke="${edge}"/><ellipse cx="${x}" cy="${y - 30}" rx="11" ry="3.5" fill="#D7DCDF" stroke="${edge}"/>`
+      + `<rect x="${x - 11}" y="${y - 22}" width="22" height="12" fill="${lbl}"/>`; break;
+    case 'jar': d = `<rect x="${x - 10}" y="${y - 34}" width="20" height="34" rx="5" fill="${col}" stroke="${edge}" opacity=".95"/><rect x="${x - 11}" y="${y - 40}" width="22" height="8" rx="2" fill="#3A3F42"/>`
+      + `<rect x="${x - 10}" y="${y - 24}" width="20" height="11" fill="${lbl}"/>`; break;
+    case 'crisps': d = `<path d="M${x - 14} ${y} q-2 -22 2 -44 l-2 -4 h28 l-2 4 q4 22 2 44 Z" fill="${col}" stroke="${edge}"/><ellipse cx="${x}" cy="${y - 24}" rx="8" ry="7" fill="${lbl}"/>`; break;
+    case 'bag': d = `<path d="M${x - 13} ${y} V${y - 44} q13 -8 26 0 V${y} Z" fill="${col}" stroke="${edge}"/><rect x="${x - 9}" y="${y - 30}" width="18" height="14" rx="2" fill="${lbl}"/>`; break;
+    case 'tray': d = `<rect x="${x - 16}" y="${y - 14}" width="32" height="14" rx="3" fill="#E9ECEE" stroke="${edge}"/><rect x="${x - 13}" y="${y - 18}" width="26" height="8" rx="4" fill="${col}"/>`; break;
+    case 'tub': d = `<path d="M${x - 14} ${y - 26} h28 l-3 26 h-22 Z" fill="${col}" stroke="${edge}"/><rect x="${x - 15}" y="${y - 30}" width="30" height="5" rx="2" fill="#fff" stroke="${edge}"/>`; break;
+    case 'block': d = `<path d="M${x - 16} ${y} V${y - 18} l32 -8 V${y} Z" fill="${col}" stroke="${edge}"/><circle cx="${x - 6}" cy="${y - 8}" r="2.4" fill="${shade}"/><circle cx="${x + 6}" cy="${y - 12}" r="2" fill="${shade}"/>`; break;
+    default: { const h = 46 + s % 24; d = `<rect x="${x - 13}" y="${y - h}" width="26" height="${h}" rx="2.5" fill="${col}" stroke="${edge}"/><rect x="${x - 9}" y="${y - h + 10}" width="18" height="16" rx="2" fill="${lbl}"/>`; }
+  }
+  return `<g class="good${it.id === newId ? ' landing' : ''}" data-id="${esc(it.id)}">${d}</g>`;
+}
+function wiresSvg(g, back){
+  // vertical wires follow the slanted ends; horizontal wires run along the side
+  const top = back ? RIM - 10 : RIM, l = back ? g.backL + 6 : g.frontL, r = back ? g.backR - 6 : g.frontR;
+  const bl = back ? g.botL + 8 : g.botL, br = back ? g.botR - 4 : g.botR;
+  let p = '';
+  const n = Math.round((r - l) / 19);
+  for (let i = 1; i < n; i++) { const t = i / n; p += `M${(l + (r - l) * t).toFixed(1)} ${top} L${(bl + (br - bl) * t).toFixed(1)} ${FLOOR}`; }
+  for (let k = 1; k <= 4; k++) { const t = k / 5, y = top + (FLOOR - top) * t;
+    p += `M${(l + (bl - l) * t).toFixed(1)} ${y.toFixed(1)} L${(r + (br - r) * t).toFixed(1)} ${y.toFixed(1)}`; }
+  return `<path d="${p}" stroke="var(${back ? '--wire-back' : '--wire'})" stroke-width="${back ? 1.4 : 1.7}" fill="none"/>`;
+}
+function drawTrolley(newId){
+  const svg = dock.querySelector('svg.trolley');
+  const W = Math.max(320, Math.round(dock.getBoundingClientRect().width || window.innerWidth));
+  const g = trolleyGeom(W);
+  const items = trolleyItems();
+  const placed = items.map((it, i) => ({ it, slot:goodSlot(i, W) }));
+  const backRow = placed.filter(p => p.slot.back).map(p => packageSvg(p.it, p.slot.x, newId)).join('');
+  const frontRow = placed.filter(p => !p.slot.back).map(p => packageSvg(p.it, p.slot.x, newId)).join('');
+  const wheel = (cx, cy, r, back) => `<g class="wheel${back ? ' back' : ''}"><circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--tyre)" opacity="${back ? .55 : 1}"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="${r * .38}" fill="var(--chrome-mid)"/><path d="M${cx - r * .7} ${cy} H${cx + r * .7}" stroke="var(--chrome-hi)" stroke-width="1.2" opacity=".6"/></g>`;
+  const fork = (x) => `<path d="M${x} 124 L${x + 3} 136" stroke="var(--chrome-lo)" stroke-width="3" stroke-linecap="round"/>`;
+  svg.setAttribute('viewBox', `0 0 ${W} ${TH}`);
+  svg.innerHTML = `
+    <defs><linearGradient id="chr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--chrome-hi)"/><stop offset=".5" stop-color="var(--chrome-mid)"/><stop offset="1" stop-color="var(--chrome-lo)"/></linearGradient></defs>
+    <ellipse cx="${W / 2}" cy="146" rx="${W * .42}" ry="5" fill="rgba(0,0,0,.12)"/>
+    <g class="roll">
+      ${wheel(g.botL + 26, 140, 6, true)}${wheel(g.botR + 6, 140, 6, true)}
+      <path d="M${g.backL + 6} ${RIM - 10} H${g.backR - 6}" stroke="var(--wire-back)" stroke-width="3" stroke-linecap="round"/>
+      ${wiresSvg(g, true)}
+      <rect x="${g.frontL + 8}" y="${RIM - 4}" width="34" height="20" rx="4" fill="var(--accent)" opacity=".7"/>
+      <path d="M${g.frontL + 12} ${RIM + 1} h26" stroke="rgba(255,255,255,.35)" stroke-width="2" stroke-linecap="round"/>
+      <g class="goods">${backRow}${frontRow}</g>
+      ${wiresSvg(g, false)}
+      <path d="M${g.frontL} ${RIM} L${g.botL} ${FLOOR} H${g.botR} L${g.frontR} ${RIM}" fill="none" stroke="url(#chr)" stroke-width="4.5" stroke-linejoin="round"/>
+      <path d="M${g.frontL - 3} ${RIM} H${g.frontR + 3}" stroke="url(#chr)" stroke-width="6.5" stroke-linecap="round"/>
+      <path d="M${g.frontL} ${RIM} L${g.backL + 6} ${RIM - 10} M${g.frontR} ${RIM} L${g.backR - 6} ${RIM - 10}" stroke="var(--chrome-mid)" stroke-width="3" stroke-linecap="round"/>
+      <rect x="${g.frontL - 6}" y="${RIM - 5}" width="14" height="10" rx="3" fill="var(--accent)"/>
+      <rect x="${g.frontR - 8}" y="${RIM - 5}" width="14" height="10" rx="3" fill="var(--accent)"/>
+      <path d="M${g.frontL} ${RIM} L${g.frontL - 26} ${RIM - 26}" stroke="url(#chr)" stroke-width="5" stroke-linecap="round"/>
+      <rect x="${g.frontL - 46}" y="${RIM - 34}" width="34" height="13" rx="6.5" fill="var(--accent)" transform="rotate(-38 ${g.frontL - 29} ${RIM - 27.5})"/>
+      <path d="M${g.botL + 4} ${FLOOR} L${g.botL + 10} 128 H${g.botR - 4} L${g.botR + 2} ${FLOOR}" fill="none" stroke="url(#chr)" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M${g.botL + 14} 123 H${g.botR - 6}" stroke="var(--chrome-mid)" stroke-width="1.8"/>
+      ${fork(g.botL + 12)}${fork(g.botR - 10)}
+      ${wheel(g.botL + 15, 140, 7.5, false)}${wheel(g.botR - 7, 140, 7.5, false)}
+    </g>`;
+  const landed = svg.querySelector('.landing');
+  if (landed && landed.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    landed.animate([{ transform:'translateY(-58px) rotate(-8deg)', opacity:.7 }, { transform:'translateY(2px) scaleY(.92)', offset:.72, opacity:1 }, { transform:'translateY(-3px)', offset:.86 }, { transform:'none' }], { duration:340, easing:'ease-in' });
+  }
 }
 function renderTrolley(newId){
   const show = tabItems().length > 0;
@@ -2490,22 +2576,24 @@ function renderTrolley(newId){
   if (!show) return;
   const n = trolleyItems().length;
   dock.querySelector('.tcount').textContent = n ? String(n) : '';
-  dock.querySelector('.hint').textContent = n ? 'Swipe up to look inside' : 'Tap an item to drop it in';
-  dock.setAttribute('aria-label', n ? `Your trolley has ${n} ${n === 1 ? 'item' : 'items'}. Open it` : 'Your trolley is empty');
-  renderGoods(newId);
+  dock.querySelector('.hint').textContent = n ? 'in trolley' : 'Trolley';
+  dock.querySelector('.hit').setAttribute('aria-label', n ? `Your trolley has ${n} ${n === 1 ? 'item' : 'items'}. Open it` : 'Your trolley is empty');
+  drawTrolley(newId);
   if (sheetCtx && sheetCtx.type === 'trolley') openTrolleySheet(true);
 }
 function bumpTrolley(){
-  const cart = dock.querySelector('.cart');
-  if (!cart.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  cart.animate([{ transform:'none' }, { transform:'translateY(4px) rotate(-1.5deg)', offset:.3 }, { transform:'translateY(-2px) rotate(1deg)', offset:.65 }, { transform:'none' }], { duration:420, easing:'ease-out' });
+  const roll = dock.querySelector('.roll');
+  if (!roll || !roll.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // the weight lands: it dips, then rolls a touch forward and back on its wheels
+  roll.animate([{ transform:'none' }, { transform:'translate(0, 3px)', offset:.25 }, { transform:'translate(7px, 0)', offset:.6 }, { transform:'none' }], { duration:520, easing:'ease-out' });
+  roll.querySelectorAll('.wheel').forEach(w => w.animate([{ transform:'rotate(0)' }, { transform:'rotate(150deg)', offset:.6 }, { transform:'rotate(0)' }], { duration:520, easing:'ease-out' }));
   const c = dock.querySelector('.tcount');
   if (c.animate) c.animate([{ transform:'scale(1)' }, { transform:'scale(1.35)' }, { transform:'scale(1)' }], { duration:300 });
 }
 function flyToTrolley(row, item){
   if (dock.hidden) return;
   const from = row.querySelector('.name').getBoundingClientRect();
-  const cart = dock.querySelector('.cart').getBoundingClientRect();
+  const tsvg = dock.querySelector('svg.trolley').getBoundingClientRect();
   const pill = document.createElement('div');
   pill.className = 'flyer';
   pill.textContent = item.name + qtyLabel(item.qty);
@@ -2513,9 +2601,10 @@ function flyToTrolley(row, item){
   pill.style.top = (from.top + from.height / 2 - 18) + 'px';
   document.body.appendChild(pill);
   const p = pill.getBoundingClientRect();
-  // Aim at the mouth of the basket, a little to one side each time so things don't land on one spot.
-  const tx = cart.left + cart.width * (0.42 + ((flying.size % 4) - 1.5) * 0.06);
-  const ty = cart.top + cart.height * 0.3;
+  // Aim at the spot along the rim where this item's package will stand.
+  const scale = tsvg.height / TH;
+  const tx = tsvg.left + goodSlot(trolleyItems().length + flying.size, tsvg.width / scale).x * scale;
+  const ty = tsvg.top + (RIM - 14) * scale;
   const dx = tx - (p.left + p.width / 2), dy = ty - (p.top + p.height / 2);
   flying.add(item.id); renderTrolley();
   const finish = () => { pill.remove(); flying.delete(item.id); renderTrolley(item.id); bumpTrolley(); };
@@ -2530,8 +2619,9 @@ function flyToTrolley(row, item){
 
 /* Swipe up (or tap) to look inside */
 let dockDrag = null;
-dock.addEventListener('pointerdown', e => { dockDrag = { y0:e.clientY, dy:0 }; dock.classList.add('drag'); try { dock.setPointerCapture(e.pointerId); } catch(_) {} });
-dock.addEventListener('pointermove', e => {
+const basketEl = dock.querySelector('.hit');
+basketEl.addEventListener('pointerdown', e => { dockDrag = { y0:e.clientY, dy:0 }; dock.classList.add('drag'); try { basketEl.setPointerCapture(e.pointerId); } catch(_) {} });
+basketEl.addEventListener('pointermove', e => {
   if (!dockDrag) return;
   dockDrag.dy = e.clientY - dockDrag.y0;
   dock.style.transform = dockDrag.dy < 0 ? `translateY(${Math.max(dockDrag.dy * .35, -24)}px)` : '';
@@ -2543,9 +2633,9 @@ const dockEnd = e => {
   if (e.type === 'pointercancel') return;
   if (d.dy < -24 || Math.abs(d.dy) < 8) openTrolleySheet();
 };
-dock.addEventListener('pointerup', dockEnd);
-dock.addEventListener('pointercancel', dockEnd);
-dock.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrolleySheet(); } });
+basketEl.addEventListener('pointerup', dockEnd);
+basketEl.addEventListener('pointercancel', dockEnd);
+basketEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrolleySheet(); } });
 
 function openTrolleySheet(refresh){
   const items = trolleyItems().slice().reverse();
