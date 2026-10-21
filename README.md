@@ -7,9 +7,9 @@ Live at **https://list-sharing.web.app**
 ## Using it
 
 - **Add**: type in the box at the top. About 2,400 UK groceries are built in, and spelling mistakes are fine ("origano" finds Oregano). Things you've added before rank first. Add a quantity with "Chicken x4" or "4x chicken".
-- **Shops**: tap **+ Add** at the end of the tabs. Supermarkets start with 24 aisles in walking order (Fruit & veg, Bakery, Meat & poultry, Fish & seafood, Dairy & eggs, Cheese, Chilled & deli, Frozen, Herbs & spices, Pasta, rice & grains, Tins & jars, Sauces & condiments, Baking, Breakfast & spreads, Tea & coffee, World foods, Snacks & sweets, Soft drinks, Beer, wine & spirits, Household, Toiletries & beauty, Health & medicine, Baby, Pets). Items file themselves into the right aisle. Empty aisles stay hidden.
+- **Shops**: tap **+ Add** at the end of the tabs. Supermarkets start with 24 aisles in walking order (Fruit & veg, Bakery, Meat & poultry, Fish & seafood, Dairy & eggs, Cheese, Chilled & deli, Frozen, Herbs & spices, Pasta, rice & grains, Tins & jars, Sauces & condiments, Baking, Breakfast & spreads, Tea & coffee, World foods, Snacks & sweets, Soft drinks, Beer, wine & spirits, Household, Toiletries & beauty, Health & medicine, Baby, Pets). Items file themselves into the right aisle. Any other shop, and every shared list, gets aisles on its own as things are added. The List tab groups by aisle too. Empty aisles stay hidden, and an aisle you delete stays deleted.
 - **Move things around**: hold an item to send it to another shop, change its aisle or quantity, rename it or remove it. Drag the handle on the right to reorder. Whatever you change is remembered next time.
-- **Tick off**: tap an item and it drops into the trolley at the bottom of the screen. Swipe up on the trolley (or tap it) to see what's in it. Tap anything you put back to return it to the list. **Done, empty it** clears the trolley when you've finished.
+- **Tick off**: tap an item and it drops into the trolley at the bottom of the screen. Swipe up on the trolley (or tap it) to see what's in it. Tap anything you put back to return it to the list. **Empty the trolley** clears it when you've finished. It needs two taps, and there's an Undo.
 - **Tabs at the top**: Settings > **Tabs at the top**, or long-press the List tab. Switch any tab off, including List, and reorder the rest. Hidden shops keep their items and still appear when you hold an item to send it somewhere.
 - **Due again**: after something has been bought twice, the app learns how often you buy it and suggests it when it's due.
 - **Older shops**: a shop made before version 2.0 shows **Update to the new aisles** in its ••• menu. Items you filed yourself stay where they are.
@@ -40,7 +40,7 @@ Everything comes across: private shops, hidden tabs, history and shared lists. T
 
 **Firebase.** Project `shopping-list-8c011`, with Anonymous sign-in enabled and the Firestore rules from `firestore.rules` pasted into Firestore > Rules > Publish. The rules need the `transfers` section for moving lists. `firebase-config.js` holds the web app config. Those values identify the project and are not secret.
 
-**Releasing a change.** Edit the files, change `CACHE` in `sw.js` (for example `trolley-v9`), and commit. Phones pick up the new version the next time the app opens with signal, sometimes after closing and reopening it once. Settings shows the version number at the bottom.
+**Releasing a change.** Edit the files, change `CACHE` in `sw.js` (for example `trolley-v12`), and commit. Phones pick up the new version the next time the app opens with signal, sometimes after closing and reopening it once. Settings shows the version number at the bottom.
 
 ## Things to know
 

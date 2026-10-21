@@ -46,32 +46,34 @@ button:disabled{opacity:.3; cursor:default}
 /* Header band: takes the active shop's colour */
 #band{
   background:var(--accent); color:#fff;
-  padding:calc(env(safe-area-inset-top) + 10px) 0 20px;
+  padding:calc(env(safe-area-inset-top) + 6px) 0 12px;
   transition:background-color .25s ease;
 }
-#tabs{display:flex; gap:8px; overflow-x:auto; padding:2px 16px 4px; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+#tabs{display:flex; gap:6px; overflow-x:auto; padding:2px 16px 4px; scrollbar-width:none; -webkit-overflow-scrolling:touch}
 #tabs::-webkit-scrollbar{display:none}
 .tab{
-  flex:none; display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 14px;
-  border-radius:18px; border:0; background:rgba(255,255,255,.16); color:#fff;
-  font:600 15px/1 var(--ui); white-space:nowrap;
+  flex:none; display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px;
+  border-radius:15px; border:0; background:rgba(255,255,255,.16); color:#fff;
+  font:600 14px/1 var(--ui); white-space:nowrap;
   user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
 }
 .tab.active{background:#fff; color:var(--c)}
-.tab .tdot{width:9px; height:9px; border-radius:50%; background:var(--c); box-shadow:0 0 0 1.5px rgba(255,255,255,.95)}
+.tab .tdot{width:8px; height:8px; border-radius:50%; background:var(--c); box-shadow:0 0 0 1.5px rgba(255,255,255,.95)}
 .tab .count{font-weight:500; opacity:.7}
 .tab.add{background:transparent; box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.45)}
 .tab.pressing{transform:scale(.96)}
-.titlerow{display:flex; align-items:flex-end; justify-content:space-between; gap:12px; padding:20px 16px 0; max-width:640px; margin:0 auto}
-h1{margin:0; font:700 34px/1.05 var(--round); letter-spacing:-.01em; overflow-wrap:anywhere}
-#subtitle{margin:5px 0 0; font-size:15px; opacity:.85}
+.titlerow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 16px 0; max-width:640px; margin:0 auto}
+.titlerow > :first-child{min-width:0}
+h1{margin:0; font:700 26px/1.1 var(--round); letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#subtitle{margin:2px 0 0; font-size:13px; opacity:.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .actions{display:flex; gap:6px; flex:none}
 .icon{
-  width:44px; height:44px; border:0; border-radius:22px; background:rgba(255,255,255,.16);
+  width:38px; height:38px; border:0; border-radius:19px; background:rgba(255,255,255,.16);
   color:#fff; display:grid; place-items:center; position:relative;
 }
-.icon svg{width:22px; height:22px}
-.badge{position:absolute; top:8px; right:8px; width:10px; height:10px; border-radius:50%; background:#FFD54A; box-shadow:0 0 0 2px var(--accent)}
+.icon svg{width:20px; height:20px}
+.icon::after{content:''; position:absolute; inset:-3px; border-radius:50%} /* 44px touch target */
+.badge{position:absolute; top:6px; right:6px; width:10px; height:10px; border-radius:50%; background:#FFD54A; box-shadow:0 0 0 2px var(--accent)}
 
 main{max-width:640px; margin:0 auto}
 
@@ -309,6 +311,7 @@ body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 190px)}
 .btn.danger.armed{background:var(--danger); color:#fff}
 @media (prefers-color-scheme:dark){ .btn.danger.armed{color:#1C2320} }
 .btn.wide{width:100%; margin-top:10px}
+.btn.wide.empty-trolley{margin-top:28px}
 a.btn{text-decoration:none; color:inherit}
 a.btn.primary{color:#fff}
 label.btn{cursor:pointer}
@@ -392,7 +395,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -603,8 +606,16 @@ function matchScore1(q, f){
 }
 
 // Best guess at which standard section an item belongs to, or null if unknown.
+const catCache = new Map();
 function categoryFor(name){
   const f = fold(name);
+  if (catCache.has(f)) return catCache.get(f);
+  const c = categoryLookup(f);
+  if (catCache.size > 2000) catCache.clear();
+  catCache.set(f, c);
+  return c;
+}
+function categoryLookup(f){
   if (!f) return null;
   if (CAT_INDEX.has(f)) return CAT_INDEX.get(f);
   for (const v of [f.replace(/es$/, ''), f.replace(/s$/, ''), f + 's', f + 'es']) {
@@ -638,15 +649,70 @@ function sectionForCategory(shop, cat){
   const tryNames = names => { const sec = shop.sections.find(x => names.has(fold(x.name))); return sec ? sec.id : null; };
   const direct = tryNames(sectionNames(cat));
   if (direct) return direct;
+  // Older shops have broad sections ("Fridge", "Cupboard"); use those, but never a neighbouring new aisle
+  // (Cheese must not land in "Dairy & eggs" just because both used to be "Fridge").
   const def = SECTION_DEFS.find(d => d.name === cat);
-  return def && def.parent ? tryNames(sectionNames(def.parent)) : null;
+  if (!def || !def.parent) return null;
+  const names = sectionNames(def.parent), std = new Set(STANDARD_SECTIONS.map(fold));
+  const sec = shop.sections.find(x => names.has(fold(x.name)) && !std.has(fold(x.name)) && !x.id.startsWith('std-'));
+  return sec ? sec.id : null;
+}
+/* Aisles appear when needed. A shop (shared lists, or shops that aren't supermarkets) may not have an aisle
+   for an item yet, so it is added in walking order. Standard aisles get a fixed id ("std-dairy-eggs") so two
+   phones adding the same aisle at once agree, and a lost aisle can be put back (healAisles). */
+const STD_INDEX = new Map(STANDARD_SECTIONS.map((n, i) => [n, i]));
+const stdSectionId = cat => 'std-' + fold(cat).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+function stdIndexOf(sec){
+  if (sec.id.startsWith('std-')) { const d = SECTION_DEFS.find(x => stdSectionId(x.name) === sec.id); if (d) return STD_INDEX.get(d.name); }
+  const f = fold(sec.name);
+  const d = SECTION_DEFS.find(x => sectionNames(x.name).has(f));
+  return d ? STD_INDEX.get(d.name) : -1;
+}
+function ensureAisle(shop, cat){
+  if (!shop || !cat || !STD_INDEX.has(cat)) return null;
+  const found = sectionForCategory(shop, cat);
+  if (found) return found;
+  const id = stdSectionId(cat);
+  if (shop.sections.some(s => s.id === id)) return id; // she renamed it
+  if (shop.noAisles || (shop.skipAisles || []).includes(cat)) return null; // she removed aisles on purpose
+  return insertAisle(shop, cat);
+}
+function insertAisle(shop, cat){
+  const id = stdSectionId(cat);
+  const want = STD_INDEX.get(cat);
+  const at = shop.sections.findIndex(s => stdIndexOf(s) > want);
+  const sec = { id, name:cat };
+  if (at < 0) shop.sections.push(sec); else shop.sections.splice(at, 0, sec);
+  return id;
+}
+// Put back any standard aisle an item points at but the shop has lost (two phones saving aisles at once).
+function healAisles(shop){
+  const ids = new Set(shop.sections.map(s => s.id));
+  let changed = false;
+  itemsIn(shop.id).forEach(i => {
+    if (!i.sectionId || ids.has(i.sectionId) || !i.sectionId.startsWith('std-')) return;
+    const d = SECTION_DEFS.find(x => stdSectionId(x.name) === i.sectionId);
+    const got = d && ensureAisle(shop, d.name);
+    if (got) { if (got !== i.sectionId) { i.sectionId = got; i.updatedAt = Date.now(); } ids.add(got); changed = true; }
+  });
+  return changed;
+}
+// File items sitting outside any aisle (from before aisles appeared on their own). Runs once per shop.
+function fileUnplaced(shop){
+  let n = 0;
+  itemsIn(shop.id).forEach(i => {
+    if (sectionOf(shop, i.sectionId)) return;
+    const s = placeFor(i.name, shop);
+    if (s) { i.sectionId = s; i.updatedAt = Date.now(); n++; }
+  });
+  return n;
 }
 // Where an item should go in a shop: her own filing first, then the catalogue's guess.
 function placeFor(name, shop){
   if (!shop) return null;
   const h = state.history[key(name)];
   if (h && h.shopId === shop.id && sectionOf(shop, h.sectionId)) return h.sectionId;
-  return sectionForCategory(shop, categoryFor(name));
+  return ensureAisle(shop, categoryFor(name));
 }
 
 const GROCERS = ['tesco','sainsbury','asda','aldi','lidl','morrison','m&s','marks','waitrose','coop','iceland','ocado','costco','spar','farmfoods','budgens','booths','supermarket','grocer'];
@@ -755,7 +821,7 @@ function addItem(raw, opts){
   if (parsed.qty) histFor(name).qty = parsed.qty;
   if (opts.quiet) return true;
   save(); render(); flash(item.id);
-  const elsewhere = state.items.find(i => i !== item && key(i.name) === k && !i.done);
+  const elsewhere = state.items.find(i => i.id !== item.id && i.shopId !== shopId && key(i.name) === k && !i.done);
   if (elsewhere) {
     const s = shopById(elsewhere.shopId);
     toast(`Also on ${s ? s.name : 'your list'}`);
@@ -937,6 +1003,7 @@ function addShop(raw){
   const sections = isGrocer(name) ? STANDARD_SECTIONS.map(n => ({ id:uid(), name:n })) : [];
   const shop = { id:uid(), name, color, sections };
   state.shops.push(shop);
+  (state.aislesFiled = state.aislesFiled || []).push(shop.id);
   return shop;
 }
 function deleteShop(id){
@@ -1048,6 +1115,15 @@ function renderList(){
       const inSec = undone.filter(i => i.sectionId === s.id);
       rows.push(`<li class="row header sortable${inSec.length ? '' : ' empty'}" data-sec="${esc(s.id)}"><span>${esc(s.name)}</span>${inSec.length ? `<span class="n">${inSec.length}</span>` : ''}</li>`);
       inSec.forEach(i => rows.push(itemRow(i, opts)));
+    });
+  } else if (!shop && undone.length) {
+    // The List tab has no aisles of its own, so group by the catalogue's aisle. Unknown things go first.
+    const groups = new Map([['', []]].concat(STANDARD_SECTIONS.map(n => [n, []])));
+    undone.forEach(i => { const c = categoryFor(i.name); groups.get(STD_INDEX.has(c) ? c : '').push(i); });
+    groups.forEach((list, cat) => {
+      if (!list.length) return;
+      if (cat) rows.push(`<li class="row header" data-cat="${esc(cat)}"><span>${esc(cat)}</span><span class="n">${list.length}</span></li>`);
+      list.forEach(i => rows.push(itemRow(i, opts)));
     });
   } else {
     rows = undone.map(i => itemRow(i, opts));
@@ -1759,7 +1835,8 @@ sheet.addEventListener('click', e => {
     case 'addStandard': {
       if (!shop) break;
       snapshot();
-      STANDARD_SECTIONS.forEach(n => addSection(shop.id, n));
+      shop.noAisles = false; shop.skipAisles = [];
+      STANDARD_SECTIONS.forEach(n => { if (!shop.sections.some(x => x.id === stdSectionId(n) || sectionNames(n).has(fold(x.name)))) insertAisle(shop, n); });
       let filed = 0;
       itemsIn(shop.id).forEach(i => {
         if (!sectionOf(shop, i.sectionId)) { i.sectionId = placeFor(i.name, shop); if (i.sectionId) filed++; }
@@ -1793,6 +1870,7 @@ sheet.addEventListener('click', e => {
       snapshot();
       shop.sections = shop.sections.filter(s => s.id !== sec.id);
       itemsIn(shop.id).forEach(i => { if (i.sectionId === sec.id) i.sectionId = null; });
+      { const si = stdIndexOf(sec); if (si >= 0) shop.skipAisles = [...new Set([...(shop.skipAisles || []), STANDARD_SECTIONS[si]])]; }
       save(); render(); openShopSheet(shop.id);
       toast(`Deleted ${sec.name}`, true);
       break;
@@ -1801,7 +1879,7 @@ sheet.addEventListener('click', e => {
       if (!shop) break;
       if (b.dataset.armed) {
         snapshot();
-        shop.sections = [];
+        shop.sections = []; shop.noAisles = true;
         itemsIn(shop.id).forEach(i => { i.sectionId = null; });
         save(); render(); openShopSheet(shop.id);
         toast('Sections removed', true);
@@ -1855,7 +1933,16 @@ sheet.addEventListener('click', e => {
         if (ctx.moved) finishMove(ctx.moveId);
       }
       break;
-    case 'clearTicked': clearTicked(); closeSheet(); break;
+    case 'clearTicked':
+      // Two taps, so a stray thumb can't empty it. Disarms after 4 seconds.
+      if (b.dataset.armed) { clearTimeout(+b.dataset.timer); clearTicked(); closeSheet(); }
+      else {
+        const n = tabItems().filter(i => i.done).length;
+        b.dataset.armed = '1'; b.classList.add('armed');
+        b.textContent = `Tap again to empty ${n} ${n === 1 ? 'item' : 'items'}`;
+        b.dataset.timer = setTimeout(() => { delete b.dataset.armed; b.classList.remove('armed'); b.textContent = 'Empty the trolley'; }, 4000);
+      }
+      break;
     case 'upgradeSections': if (shop) { upgradeSections(shop); openShopSheet(shop.id); } break;
     case 'toggleHide':
       if (shop && setTabHidden(shop.id, !shop.hidden)) { toast(shop.hidden ? `${shop.name} hidden. Long-press List or open Settings to show it again.` : `${shop.name} is back at the top`); closeSheet(); }
@@ -2059,7 +2146,7 @@ function fbErrorText(e){
 const sharedItemFields = i => ({ id:i.id, name:i.name, qty:clampQty(i.qty), sectionId:i.sectionId || null, done:!!i.done,
   doneAt:i.doneAt || null, order:i.order || 0, addedAt:i.addedAt || 0, updatedAt:i.updatedAt || 0 });
 const itemSig = i => JSON.stringify(sharedItemFields(i));
-const metaOf = shop => ({ name:shop.name, color:shop.color, sections:shop.sections });
+const metaOf = shop => ({ name:shop.name, color:shop.color, sections:shop.sections, noAisles:!!shop.noAisles, skipAisles:shop.skipAisles || [] });
 const live = new Map(); // listId -> { shop, known:Map(itemId->sig), metaSig, unsubs:[], fromCache, pending, ready }
 const ownDeletes = new Set();
 
@@ -2103,12 +2190,18 @@ function subscribe(shop){
       if (local) { state.removed.unshift(Object.assign({}, local, { removedAt:Date.now() })); if (state.removed.length > MAX_REMOVED) state.removed.length = MAX_REMOVED; }
     });
     // Before the first snapshot has landed, local edits made offline since the last run are kept and sent.
+    let firstLoad = false;
     if (!L.ready) {
-      L.ready = true;
+      L.ready = true; firstLoad = true;
       itemsIn(s.id).forEach(i => { if (!incoming.has(i.id)) incoming.set(i.id, i); });
     }
     state.items = state.items.filter(i => i.shopId !== s.id).concat([...incoming.values()]);
     L.known = new Map([...incoming.entries()].map(([k, v]) => [k, itemSig(v)]));
+    healAisles(s);
+    if (firstLoad && !snap.metadata.fromCache) {
+      state.aislesFiled = state.aislesFiled || [];
+      if (!state.aislesFiled.includes(id)) { fileUnplaced(s); state.aislesFiled.push(id); }
+    }
     safeSet(KEY, JSON.stringify(state));
     render();
     noteSharedChanges();
@@ -2121,9 +2214,13 @@ function subscribe(shop){
     if (v.name) s.name = String(v.name).slice(0, 80);
     if (v.color) s.color = v.color;
     if (Array.isArray(v.sections)) s.sections = v.sections.filter(x => x && x.id && x.name);
+    if ('noAisles' in v) s.noAisles = !!v.noAisles;
+    if (Array.isArray(v.skipAisles)) s.skipAisles = v.skipAisles.filter(x => typeof x === 'string');
     L.metaSig = JSON.stringify(metaOf(s));
+    const healed = healAisles(s);
     safeSet(KEY, JSON.stringify(state));
     render();
+    if (healed) noteSharedChanges();
   }, err => { L.error = err; renderSyncState(); }));
 }
 function resetSharing(){ [...live.keys()].forEach(unsubscribe); startSharing(); }
@@ -2230,7 +2327,8 @@ async function joinSharedList(code){
   if (!snap.exists()) throw new Error('No list has that code. Check it and try again.');
   const v = snap.data() || {};
   const shop = { id:uid(), name:String(v.name || 'Shared list').slice(0, 80), color:v.color || PALETTE[0],
-    sections:Array.isArray(v.sections) ? v.sections : [], shared:{ fb:true, listId, joinedAt:Date.now() } };
+    sections:Array.isArray(v.sections) ? v.sections : [], noAisles:!!v.noAisles,
+    skipAisles:Array.isArray(v.skipAisles) ? v.skipAisles : [], shared:{ fb:true, listId, joinedAt:Date.now() } };
   state.shops.push(shop);
   state.tab = shop.id;
   subscribe(shop);
@@ -2643,7 +2741,8 @@ function openTrolleySheet(refresh){
   const html = `<h2>In your trolley${items.length ? ` (${items.length})` : ''}</h2>`
     + `<p class="sub">${items.length ? 'Tap anything you put back to return it to the list.' : 'Nothing in it yet. Tap items on your list and they drop in here.'}</p>`
     + (items.length ? `<ul class="list trolley-list" aria-label="In trolley">${items.map(i => itemRow(i, { showUsual:!shop })).join('')}</ul>`
-        + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Keep shopping</button><button type="button" class="btn primary" data-act="clearTicked">Done, empty it</button></div>'
+        + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="cancel">Keep shopping</button></div>'
+        + '<button type="button" class="btn danger wide empty-trolley" data-act="clearTicked">Empty the trolley</button>'
       : '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Close</button></div>');
   if (refresh && sheetCtx && sheetCtx.type === 'trolley') {
     const top = sheet.scrollTop;
@@ -2809,6 +2908,17 @@ function openShopPicker(){
   );
 }
 /* ---------- Start ---------- */
+// 2.1.1: aisles now appear on their own, so file anything that was left outside one. Once per private shop.
+(function fileOldItems(){
+  state.aislesFiled = state.aislesFiled || [];
+  let changed = false;
+  state.shops.forEach(sh => {
+    healAisles(sh);
+    if (isShared(sh) || state.aislesFiled.includes(sh.id)) return;
+    fileUnplaced(sh); state.aislesFiled.push(sh.id); changed = true;
+  });
+  if (changed) safeSet(KEY, JSON.stringify(state));
+})();
 render();
 (function handleJoinLink(){
   const m = location.hash.match(/#join=([^&]+)/);
