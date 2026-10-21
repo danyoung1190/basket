@@ -6,11 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Basket">
+<meta name="apple-mobile-web-app-title" content="Trolley">
 <meta name="theme-color" content="#2F6B55">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
-<title>Basket</title>
+<title>Virtual Trolley</title>
 <style>
 :root{
   --bg:#F4F6F5; --surface:#FFFFFF; --ink:#1C2320; --muted:#68716C; --line:#E1E5E2;
@@ -232,6 +232,34 @@ body.is-dragging{cursor:grabbing}
 }
 #toast.show{transform:translate(-50%, 0); visibility:visible; transition:transform .25s ease}
 #layer{overflow:hidden}
+/* Trolley dock: a trolley parked at the bottom; ticked items drop into it, swipe up to look inside */
+#dock{position:absolute; left:0; right:0; bottom:0; z-index:35; max-width:640px; margin:0 auto;
+  height:calc(max(env(safe-area-inset-bottom), 10px) + 92px); padding-top:8px;
+  background:var(--surface); border-radius:22px 22px 0 0; box-shadow:0 -6px 24px rgba(0,0,0,.10);
+  touch-action:none; user-select:none; -webkit-user-select:none; cursor:pointer;
+  transition:transform .2s ease, opacity .2s ease}
+#dock .grabber{margin:0 auto 4px}
+#dock .cart{display:block; margin:0 auto; width:150px; height:70px; color:var(--accent); overflow:visible}
+#dock .cart .body{fill:color-mix(in srgb, var(--accent) 18%, var(--surface)); fill-opacity:.4}
+#dock .tcount{position:absolute; top:22px; left:calc(50% + 62px); min-width:26px; height:26px; padding:0 7px; border-radius:13px;
+  background:var(--accent); color:#fff; font:700 14px/26px var(--ui); text-align:center}
+#dock .tcount:empty{display:none}
+#dock .hint{position:absolute; top:26px; left:16px; right:calc(50% + 82px); font-size:13px; line-height:1.3; color:var(--muted); text-align:right}
+#dock.drag{transition:none}
+body.typing #dock, body.sheet-open #dock{transform:translateY(110%); opacity:0; pointer-events:none}
+#layer.with-trolley #toast{bottom:calc(max(env(safe-area-inset-bottom), 10px) + 104px)}
+body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 150px)}
+.good{transform-box:fill-box; transform-origin:50% 100%}
+.trolley-list .row.item{padding-right:16px}
+.flyer{position:fixed; z-index:70; height:36px; padding:0 14px; border-radius:18px; background:var(--accent); color:#fff;
+  font:600 15px/36px var(--ui); white-space:nowrap; max-width:60vw; overflow:hidden; text-overflow:ellipsis; pointer-events:none;
+  box-shadow:0 6px 16px rgba(0,0,0,.2); will-change:transform}
+.switch{flex:none; width:52px; height:32px; margin-left:6px; border:0; border-radius:16px; background:var(--line); position:relative; transition:background-color .15s}
+.switch span{position:absolute; top:3px; left:3px; width:26px; height:26px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:transform .15s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"] span{transform:translateX(20px)}
+.tdot2{flex:none; width:12px; height:12px; margin-right:10px; border-radius:50%; background:var(--c)}
+.tabrow .nm .cloud{width:14px; height:14px; vertical-align:-2px; color:var(--muted)}
 #toast button{border:0; background:none; color:var(--toast-act); font-weight:700; padding:6px 8px}
 #toast:not(:has(button)){padding-right:18px}
 
@@ -279,6 +307,8 @@ body.is-dragging{cursor:grabbing}
 .btn.danger.armed{background:var(--danger); color:#fff}
 @media (prefers-color-scheme:dark){ .btn.danger.armed{color:#1C2320} }
 .btn.wide{width:100%; margin-top:10px}
+a.btn{text-decoration:none; color:inherit}
+a.btn.primary{color:#fff}
 label.btn{cursor:pointer}
 .prompt-form{display:flex; gap:8px; margin-top:16px}
 .prompt-form .btn{flex:none}
@@ -327,6 +357,7 @@ label.btn{cursor:pointer}
 </header>
 
 <main>
+  <div id="moved"></div>
   <div id="install"></div>
   <form id="addForm" autocomplete="off">
     <input id="addInput" class="field" type="text" enterkeyhint="enter" autocapitalize="sentences" autocorrect="on" spellcheck="true" placeholder="Add to your list" aria-label="Add an item" maxlength="80">
@@ -346,6 +377,21 @@ label.btn{cursor:pointer}
   <div id="backdrop" hidden></div>
   <section id="sheet" role="dialog" aria-modal="true" tabindex="-1" hidden></section>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="dock" role="button" tabindex="0" aria-label="Your trolley" hidden>
+    <div class="grabber" aria-hidden="true"></div>
+    <span class="hint">Swipe up</span>
+    <svg class="cart" viewBox="0 0 150 70" aria-hidden="true">
+      <g class="goods"></g>
+      <path class="body" d="M26 18 H142 L128 48 H38 Z"/>
+      <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 8 H16 L26 18 H142 L128 48 H38 L26 18"/>
+        <path d="M50 18 L53 48 M70 18 L71 48 M90 18 L89 48 M110 18 L107 48 M32 33 H135" stroke-width="1.8" opacity=".55"/>
+        <path d="M38 48 L36 56 H126"/>
+      </g>
+      <g fill="currentColor"><circle cx="46" cy="62" r="5"/><circle cx="118" cy="62" r="5"/></g>
+    </svg>
+    <span class="tcount"></span>
+  </div>
 </div>
 
 <script src="qrcode.js"></script>
@@ -354,7 +400,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '2.0.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -362,38 +408,12 @@ const MAX_HISTORY = 600;
 const LIST_COLOR = '#2F6B55';
 const PALETTE = ['#C8412E','#2D5BC9','#7B3FA0','#A8720A','#14837D','#3F8A2F','#C2185B','#22396F','#B85A12','#56606B'];
 const SHOP_SUGGESTIONS = ['Tesco',"Sainsbury's",'Asda','Aldi','Lidl','Morrisons','M&S','Waitrose','Co-op','Iceland','Ocado','Costco'];
-// Built-in catalogue: common UK grocery items and the section each one usually lives in.
-const STANDARD_SECTIONS = ['Fruit & veg','Bakery','Meat & fish','Fridge','Freezer','Cupboard','Snacks & treats','Drinks','Household','Toiletries','Baby','Pets'];
+// Built-in catalogue: UK supermarket items by aisle, sections in rough walking order.
+const SECTION_DEFS = [{"name": "Fruit & veg", "aliases": ["fruit and veg", "fruit & vegetables", "fruit and vegetables", "produce", "veg", "fresh produce", "vegetables", "fruit"], "parent": null}, {"name": "Bakery", "aliases": ["bread", "bread & bakery", "bakery & bread", "bread and bakery"], "parent": null}, {"name": "Meat & poultry", "aliases": ["meat", "poultry", "butcher", "butchers", "meat and poultry"], "parent": "Meat & fish"}, {"name": "Fish & seafood", "aliases": ["fish", "seafood", "fishmonger", "fish counter", "fish and seafood"], "parent": "Meat & fish"}, {"name": "Dairy & eggs", "aliases": ["dairy", "dairy and eggs", "milk & dairy", "milk and dairy", "eggs", "milk"], "parent": "Fridge"}, {"name": "Cheese", "aliases": ["cheeses", "cheese counter"], "parent": "Fridge"}, {"name": "Chilled & deli", "aliases": ["chilled", "deli", "deli counter", "ready meals", "chilled food", "fridge"], "parent": "Fridge"}, {"name": "Frozen", "aliases": ["freezer", "frozen food", "frozen foods", "freezers"], "parent": "Freezer"}, {"name": "Herbs & spices", "aliases": ["spices", "herbs", "seasoning", "seasonings", "spices & seasonings", "herbs and spices"], "parent": "Cupboard"}, {"name": "Pasta, rice & grains", "aliases": ["pasta", "rice", "pasta & rice", "pasta and rice", "grains", "noodles", "dry goods"], "parent": "Cupboard"}, {"name": "Tins & jars", "aliases": ["tins", "tinned", "tinned food", "canned", "cans", "jars", "tins & packets"], "parent": "Cupboard"}, {"name": "Sauces & condiments", "aliases": ["sauces", "condiments", "cooking sauces", "table sauces", "oils & vinegars", "oil & vinegar"], "parent": "Cupboard"}, {"name": "Baking", "aliases": ["home baking", "baking aisle", "sugar & flour"], "parent": "Cupboard"}, {"name": "Breakfast & spreads", "aliases": ["breakfast", "cereal", "cereals", "spreads", "jams & spreads", "breakfast cereals"], "parent": "Cupboard"}, {"name": "Tea & coffee", "aliases": ["hot drinks", "tea", "coffee", "tea and coffee"], "parent": "Drinks"}, {"name": "World foods", "aliases": ["world food", "international", "ethnic", "asian", "indian", "mexican", "polish"], "parent": "Cupboard"}, {"name": "Snacks & sweets", "aliases": ["snacks", "sweets", "crisps", "biscuits", "crisps & snacks", "confectionery", "treats", "snacks & treats", "chocolate"], "parent": "Snacks & treats"}, {"name": "Soft drinks", "aliases": ["drinks", "soft drink", "water", "juice", "juices", "fizzy drinks", "squash"], "parent": "Drinks"}, {"name": "Beer, wine & spirits", "aliases": ["alcohol", "beer & wine", "beer and wine", "wine", "beer", "spirits", "booze", "off licence", "beers wines & spirits"], "parent": "Drinks"}, {"name": "Household", "aliases": ["cleaning", "household & cleaning", "household and cleaning", "laundry", "home", "kitchen & household"], "parent": null}, {"name": "Toiletries & beauty", "aliases": ["toiletries", "beauty", "health & beauty", "health and beauty", "personal care", "bathroom"], "parent": "Toiletries"}, {"name": "Health & medicine", "aliases": ["pharmacy", "medicine", "medicines", "health", "chemist", "first aid"], "parent": "Toiletries"}, {"name": "Baby", "aliases": ["baby & toddler", "baby and toddler", "kids", "baby & child"], "parent": null}, {"name": "Pets", "aliases": ["pet", "pet food", "pet care", "pets & pet food"], "parent": null}];
+const OLD_SECTION_ALIASES = {"Meat & fish": ["meat", "fish", "meat and fish", "butcher", "butchers", "meat & poultry"], "Fridge": ["dairy", "dairy & eggs", "dairy and eggs", "chilled", "fridge & dairy", "milk & dairy"], "Freezer": ["frozen", "frozen food", "frozen foods"], "Cupboard": ["food cupboard", "store cupboard", "tins & packets", "tins", "dry goods", "pantry", "larder"], "Snacks & treats": ["snacks", "crisps & snacks", "sweets", "biscuits", "treats", "confectionery"], "Drinks": ["beer & wine", "alcohol", "soft drinks", "drinks & alcohol", "wine"], "Toiletries": ["health & beauty", "health and beauty", "beauty", "pharmacy", "personal care"]};
+const CATALOG = {"Fruit & veg":["Apples","Pink lady apples","Gala apples","Braeburn apples","Granny smith apples","Cooking apples","Bramley apples","Bananas","Oranges","Blood oranges","Satsumas","Clementines","Easy peelers","Mandarins","Lemons","Limes","Grapefruit","Grapes","Red grapes","Green grapes","Strawberries","Raspberries","Blueberries","Blackberries","Cherries","Gooseberries","Redcurrants","Cranberries","Berries","Pears","Conference pears","Peaches","Nectarines","Plums","Apricots","Figs","Kiwi","Mango","Pineapple","Melon","Cantaloupe melon","Honeydew melon","Galia melon","Watermelon","Papaya","Passion fruit","Pomegranate","Lychees","Dragon fruit","Rhubarb","Coconut","Fruit salad","Prepared fruit","Melon pieces","Avocados","Tomatoes","Cherry tomatoes","Vine tomatoes","Beef tomatoes","Baby plum tomatoes","Cucumber","Lettuce","Iceberg lettuce","Romaine lettuce","Cos lettuce","Little gem","Salad leaves","Bagged salad","Mixed salad","Baby leaf salad","Spinach","Baby spinach","Rocket","Watercress","Lambs lettuce","Pea shoots","Coleslaw mix","Peppers","Red peppers","Green peppers","Yellow peppers","Mixed peppers","Sweet pointed peppers","Romano peppers","Onions","Red onions","White onions","Brown onions","Spring onions","Shallots","Garlic","Garlic bulb","Ginger","Fresh ginger","Root ginger","Potatoes","Baby potatoes","New potatoes","Baking potatoes","Jacket potatoes","Maris piper potatoes","King edward potatoes","Charlotte potatoes","Sweet potatoes","Carrots","Baby carrots","Parsnips","Broccoli","Tenderstem broccoli","Purple sprouting broccoli","Cauliflower","Romanesco","Cabbage","Savoy cabbage","Red cabbage","White cabbage","Pak choi","Bok choy","Chinese leaf","Brussels sprouts","Kale","Cavolo nero","Spring greens","Chard","Leeks","Celery","Celeriac","Fennel","Courgettes","Zucchini","Aubergine","Eggplant","Marrow","Mushrooms","Chestnut mushrooms","Button mushrooms","Portobello mushrooms","Flat mushrooms","Shiitake mushrooms","Oyster mushrooms","Green beans","Fine beans","Runner beans","Broad beans","Sugar snap peas","Mangetout","Asparagus","Corn on the cob","Baby corn","Okra","Artichokes","Butternut squash","Squash","Pumpkin","Beetroot","Cooked beetroot","Swede","Turnip","Radishes","Jerusalem artichokes","Chillies","Red chillies","Green chillies","Scotch bonnet","Bean sprouts","Edamame","Stir fry veg","Stir fry mix","Prepared veg","Veg medley","Roasting veg","Diced onions","Mash","Microgreens","Salad cress","Cress","Fresh herbs","Coriander","Fresh coriander","Cilantro","Basil","Fresh basil","Parsley","Flat leaf parsley","Curly parsley","Mint","Fresh mint","Rosemary","Fresh rosemary","Thyme","Fresh thyme","Sage","Fresh sage","Dill","Fresh dill","Chives","Fresh chives","Tarragon","Fresh tarragon","Lemongrass","Lemon grass","Kaffir lime leaves","Curry leaves","Herb pot","Flowers","Bouquet","Tulips","Roses","Daffodils","Pot plant"],"Bakery":["Bread","White bread","Brown bread","Wholemeal bread","Seeded bread","Granary bread","Malted bread","50/50 bread","Sourdough","Crusty loaf","Bloomer","Tiger bread","Farmhouse loaf","Sliced bread","Thick sliced bread","Toastie bread","Rye bread","Spelt bread","Soda bread","Baguette","Petit pains","Ciabatta","Focaccia","Rolls","Bread rolls","Crusty rolls","Soft rolls","Finger rolls","Sub rolls","Baps","Burger buns","Brioche buns","Hot dog rolls","Wraps","Tortilla wraps","Tortillas","Pitta bread","Pittas","Naan bread","Garlic naan","Chapatis","Flatbreads","Bagels","Crumpets","Pikelets","English muffins","Muffins","Croissants","Pain au chocolat","Pain aux raisins","Danish pastries","Cinnamon swirls","Teacakes","Hot cross buns","Scones","Fruit scones","Iced buns","Belgian buns","Doughnuts","Jam doughnuts","Ring doughnuts","Cake","Birthday cake","Victoria sponge","Chocolate cake","Carrot cake","Lemon drizzle","Fruit cake","Swiss roll","Cupcakes","Brownies","Eclairs","Cream cakes","Custard tarts","Bakewell tarts","Jam tarts","Mince pies","Pies","Brioche","Brioche loaf","Pancakes","Scotch pancakes","Waffles","Fruit loaf","Malt loaf","Soreen","Gluten free bread","Bread sticks","Pizza bases","Panettone","Stollen"],"Meat & poultry":["Chicken","Chicken breasts","Chicken breast fillets","Chicken thighs","Boneless chicken thighs","Chicken drumsticks","Chicken legs","Chicken wings","Whole chicken","Roast chicken","Chicken mini fillets","Diced chicken","Chicken strips","Chicken kebabs","Spatchcock chicken","Turkey","Turkey breast","Turkey crown","Turkey steaks","Turkey mince","Duck","Duck breasts","Duck legs","Gammon joint","Beef mince","Lean mince","Mince","Steak mince","Lamb mince","Pork mince","Steak","Sirloin steak","Rump steak","Ribeye steak","Fillet steak","Frying steak","Minute steak","Stewing steak","Stewing beef","Diced beef","Braising steak","Beef brisket","Beef joint","Topside","Silverside","Roast beef joint","Short ribs","Oxtail","Pork joint","Pork shoulder","Pulled pork","Pork chops","Pork loin steaks","Pork steaks","Pork belly","Pork tenderloin","Pork fillet","Pork ribs","Ribs","Spare ribs","Gammon","Gammon steaks","Ham joint","Bacon","Smoked bacon","Unsmoked bacon","Streaky bacon","Back bacon","Bacon medallions","Lardons","Pancetta","Chorizo","Sausages","Pork sausages","Cumberland sausages","Lincolnshire sausages","Chipolatas","Cocktail sausages","Beef sausages","Chicken sausages","Pigs in blankets","Sausage meat","Black pudding","White pudding","Haggis","Lamb","Lamb chops","Lamb cutlets","Leg of lamb","Lamb shoulder","Lamb shanks","Diced lamb","Lamb steaks","Rack of lamb","Liver","Lambs liver","Kidneys","Venison","Rabbit","Goat","Burgers","Beef burgers","Quarter pounders","Chicken burgers","Meatballs","Beef meatballs","Pork meatballs","Kebab meat","Faggots","Marinated chicken","Meat feast"],"Fish & seafood":["Salmon","Salmon fillets","Smoked salmon","Hot smoked salmon","Salmon steaks","Cod","Cod fillets","Haddock","Haddock fillets","Smoked haddock","Hake","Pollock","Basa","Plaice","Sole","Lemon sole","Sea bass","Sea bream","Trout","Rainbow trout","Mackerel","Smoked mackerel","Kippers","Herring","Tuna steaks","Swordfish","Monkfish","Halibut","Coley","Tilapia","Fish","White fish","Fish pie mix","Fish fillets","Prawns","King prawns","Tiger prawns","Cooked prawns","Raw prawns","Prawn cocktail","Shrimp","Scallops","Mussels","Clams","Squid","Calamari","Octopus","Crab","Crab meat","Lobster","Crayfish","Seafood sticks","Crab sticks","Seafood mix"],"Dairy & eggs":["Milk","Semi skimmed milk","Skimmed milk","Whole milk","1% milk","Full fat milk","Filtered milk","Cravendale","Lactose free milk","Goats milk","Oat milk","Almond milk","Soya milk","Coconut milk drink","Rice milk","Oatly","Alpro","Chocolate milk","Buttermilk","Butter","Salted butter","Unsalted butter","Spreadable butter","Lurpak","Anchor butter","Spread","Margarine","Flora","Utterly butterly","Clover","Vegan butter","Ghee","Eggs","Free range eggs","Large eggs","Medium eggs","Organic eggs","Duck eggs","Quail eggs","Egg whites","Yoghurt","Yogurt","Greek yoghurt","Natural yoghurt","Greek style yoghurt","Fruit yoghurt","Kids yoghurts","Yoghurt pots","Skyr","Kefir","Yeo valley","Muller corner","Activia","Actimel","Yakult","Fromage frais","Petits filous","Frubes","Yoghurt drinks","Cream","Single cream","Double cream","Whipping cream","Extra thick cream","Clotted cream","Squirty cream","Sour cream","Soured cream","Creme fraiche","Custard","Fresh custard","Rice pudding pots","Chocolate mousse","Desserts","Cheesecake","Trifle","Panna cotta","Creme brulee"],"Cheese":["Cheese","Cheddar","Mature cheddar","Mild cheddar","Extra mature cheddar","Medium cheddar","Red leicester","Double gloucester","Wensleydale","Cheshire cheese","Lancashire cheese","Caerphilly","Stilton","Blue cheese","Gorgonzola","Roquefort","Danish blue","Mozzarella","Buffalo mozzarella","Grated mozzarella","Burrata","Parmesan","Grana padano","Pecorino","Feta","Halloumi","Paneer","Brie","Camembert","Goats cheese","Ricotta","Mascarpone","Cream cheese","Philadelphia","Soft cheese","Cottage cheese","Quark","Edam","Gouda","Emmental","Gruyere","Manchego","Comte","Jarlsberg","Raclette","Smoked cheese","Grated cheese","Cheese slices","Burger cheese","Cheese strings","Babybel","Dairylea","Laughing cow","Cheese triangles","Cheese spread","Vegan cheese","Cheeseboard"],"Chilled & deli":["Ham","Sliced ham","Wafer thin ham","Honey roast ham","Smoked ham","Parma ham","Prosciutto","Serrano ham","Cooked chicken","Chicken slices","Chicken pieces","Turkey slices","Roast beef slices","Salami","Pepperoni","Chorizo slices","Pastrami","Corned beef slices","Pate","Chicken liver pate","Brussels pate","Houmous","Hummus","Coleslaw","Potato salad","Pasta salad","Dips","Guacamole","Salsa dip","Tzatziki","Sour cream and chive dip","Onion bhajis","Samosas","Falafel","Olives","Sun dried tomatoes","Antipasti","Stuffed peppers","Fresh pasta","Tortellini","Ravioli","Gnocchi","Fresh soup","Ready meal","Lasagne","Cottage pie","Shepherds pie","Fish pie","Macaroni cheese","Curry ready meal","Chilli con carne ready meal","Fresh pizza","Pizza","Garlic bread","Garlic baguette","Doughballs","Quiche","Pork pies","Mini pork pies","Sausage rolls","Scotch eggs","Pasties","Cornish pasties","Steak bake","Sandwiches","Sushi","Prepared salad","Salad bowl","Meal deal","Lunchables","Snack pots","Orange juice","Apple juice","Fresh juice","Smoothie","Innocent smoothie","Tropicana","Cranberry juice","Pineapple juice","Grapefruit juice","Tomato juice","Iced coffee","Iced tea","Tofu","Smoked tofu","Tempeh","Puff pastry","Shortcrust pastry","Filo pastry","Pastry","Pizza dough","Cookie dough","Croissant dough","Lard","Suet","Fresh stock","Bacon bits","Fresh noodles","Udon noodles","Kimchi","Sauerkraut"],"Frozen":["Ice cream","Vanilla ice cream","Chocolate ice cream","Ice cream tubs","Ice lollies","Lollies","Magnums","Cornettos","Ice cream cones","Sorbet","Frozen yoghurt","Viennetta","Arctic roll","Frozen desserts","Frozen cheesecake","Frozen gateau","Frozen profiteroles","Frozen peas","Peas","Petits pois","Frozen sweetcorn","Frozen mixed veg","Frozen vegetables","Frozen broccoli","Frozen cauliflower","Frozen green beans","Frozen spinach","Frozen chopped onions","Frozen garlic","Frozen herbs","Frozen chillies","Frozen edamame","Frozen berries","Frozen fruit","Frozen mango","Smoothie mix","Oven chips","Chips","Frozen chips","Chunky chips","French fries","Crinkle cut chips","Sweet potato fries","Potato waffles","Hash browns","Frozen roast potatoes","Potato wedges","Croquettes","Frozen mash","Yorkshire puddings","Frozen yorkshire puddings","Fish fingers","Chicken nuggets","Chicken dippers","Popcorn chicken","Chicken kievs","Breaded chicken","Frozen chicken","Frozen chicken breasts","Frozen mince","Frozen burgers","Frozen sausages","Frozen pizza","Frozen garlic bread","Frozen prawns","Frozen fish","Breaded fish","Battered fish","Fish cakes","Frozen salmon","Scampi","Ice","Ice cubes","Onion rings","Frozen ready meal","Frozen lasagne","Frozen pies","Frozen pastry","Frozen puff pastry","Spring rolls","Frozen samosas","Frozen dumplings","Gyoza","Mozzarella sticks","Quorn mince","Quorn pieces","Quorn nuggets","Veggie burgers","Veggie sausages","Vegetarian sausages","Plant based burgers","Frozen pancakes","Frozen croissants","Frozen bread"],"Herbs & spices":["Salt","Table salt","Sea salt","Rock salt","Sea salt flakes","Maldon salt","Garlic salt","Celery salt","Low salt","Pepper","Black pepper","Ground black pepper","Black peppercorns","Peppercorns","White pepper","Mixed peppercorns","Pink peppercorns","Mixed herbs","Dried herbs","Herbes de provence","Italian herbs","Oregano","Dried oregano","Dried basil","Dried parsley","Dried thyme","Dried rosemary","Dried sage","Dried mint","Dried dill","Dried chives","Dried tarragon","Marjoram","Bay leaves","Dried bay leaves","Dried coriander leaf","Paprika","Smoked paprika","Sweet paprika","Hot paprika","Cumin","Ground cumin","Cumin seeds","Coriander seeds","Ground coriander","Turmeric","Ground turmeric","Ginger ground","Ground ginger","Cinnamon","Ground cinnamon","Cinnamon sticks","Nutmeg","Ground nutmeg","Whole nutmeg","Cloves","Ground cloves","Allspice","Mixed spice","Pumpkin spice","Chilli powder","Chilli flakes","Crushed chillies","Dried chillies","Cayenne pepper","Cayenne","Hot chilli powder","Mild chilli powder","Kashmiri chilli powder","Piri piri seasoning","Cajun seasoning","Fajita seasoning","Taco seasoning","Jerk seasoning","Chinese five spice","Five spice","Garam masala","Curry powder","Mild curry powder","Medium curry powder","Hot curry powder","Tandoori masala","Ras el hanout","Baharat","Za'atar","Zaatar","Sumac","Dukkah","Cardamom","Cardamom pods","Ground cardamom","Star anise","Fennel seeds","Fenugreek","Fenugreek seeds","Mustard seeds","Black mustard seeds","Yellow mustard seeds","Nigella seeds","Onion seeds","Caraway seeds","Celery seeds","Poppy seeds","Sesame seeds","Saffron","Juniper berries","Asafoetida","Lemongrass paste","Galangal","Garlic powder","Garlic granules","Onion powder","Onion granules","Ginger paste","Garlic paste","Ginger and garlic paste","Herb paste","Chilli paste","Smoked salt","Msg","Steak seasoning","Chicken seasoning","Fish seasoning","Season all","Lemon pepper","Everything bagel seasoning","Spice mix","Spices","Herbs"],"Pasta, rice & grains":["Pasta","Spaghetti","Linguine","Tagliatelle","Fettuccine","Penne","Fusilli","Rigatoni","Farfalle","Conchiglie","Orzo","Macaroni","Lasagne sheets","Cannelloni","Wholewheat pasta","Gluten free pasta","Egg pasta","Pasta shells","Noodles","Egg noodles","Rice noodles","Soba noodles","Ramen noodles","Glass noodles","Vermicelli","Straight to wok noodles","Instant noodles","Pot noodle","Super noodles","Supernoodles","Rice","Basmati rice","Long grain rice","Brown rice","Wild rice","Jasmine rice","Arborio rice","Risotto rice","Paella rice","Sushi rice","Pudding rice","Microwave rice","Rice pouch","Uncle bens","Egg fried rice pouch","Pilau rice","Couscous","Giant couscous","Quinoa","Bulgur wheat","Pearl barley","Polenta","Freekeh","Buckwheat","Millet","Lentils","Red lentils","Green lentils","Puy lentils","Split peas","Dried chickpeas","Dried beans","Grains pouch"],"Tins & jars":["Tinned tomatoes","Chopped tomatoes","Plum tomatoes","Cherry tomatoes tinned","Passata","Tomato puree","Sun dried tomato paste","Baked beans","Beans","Heinz beans","Kidney beans","Red kidney beans","Black beans","Butter beans","Cannellini beans","Borlotti beans","Haricot beans","Pinto beans","Mixed beans","Chickpeas","Tinned chickpeas","Tinned lentils","Refried beans","Tinned tuna","Tuna","Tuna chunks","Tinned salmon","Tinned sardines","Sardines","Tinned mackerel","Anchovies","Pilchards","Tinned crab","Corned beef","Spam","Tinned ham","Tinned chicken","Frankfurters","Hot dog sausages","Stewed steak","Tinned sweetcorn","Sweetcorn","Tinned peas","Mushy peas","Marrowfat peas","Tinned carrots","Tinned potatoes","Tinned mushrooms","Artichoke hearts","Water chestnuts","Bamboo shoots","Jackfruit","Palm hearts","Tinned soup","Soup","Tomato soup","Chicken soup","Vegetable soup","Mushroom soup","Minestrone","Cup a soup","Spaghetti hoops","Alphabetti spaghetti","Rice pudding","Tinned custard","Ambrosia custard","Tinned fruit","Tinned peaches","Tinned pears","Tinned pineapple","Pineapple chunks","Pineapple rings","Fruit cocktail","Mandarin segments","Tinned apricots","Tinned cherries","Tinned prunes","Tinned mango","Coconut milk","Coconut cream","Light coconut milk","Evaporated milk","Condensed milk","Carnation","Long life milk","UHT milk","Dried milk","Powdered milk","Pickles","Gherkins","Pickled onions","Silverskin onions","Pickled beetroot","Pickled cabbage","Jalapenos","Capers","Piccalilli","Branston pickle","Chutney","Mango chutney","Onion chutney","Lime pickle","Cranberry sauce"],"Sauces & condiments":["Ketchup","Tomato ketchup","Heinz ketchup","Mayonnaise","Mayo","Light mayonnaise","Hellmanns","Garlic mayo","Brown sauce","HP sauce","Salad cream","Mustard","English mustard","Dijon mustard","Wholegrain mustard","American mustard","French mustard","Mustard powder","Horseradish","Mint sauce","Mint jelly","Apple sauce","Bread sauce","Tartare sauce","Burger sauce","Seafood sauce","Thousand island","BBQ sauce","Barbecue sauce","Hot sauce","Sriracha","Tabasco","Frank's hot sauce","Peri peri sauce","Nando's sauce","Sweet chilli sauce","Chilli sauce","Garlic sauce","Hoisin sauce","Oyster sauce","Soy sauce","Light soy sauce","Dark soy sauce","Tamari","Teriyaki sauce","Fish sauce","Worcestershire sauce","Lea and perrins","Plum sauce","Black bean sauce","Sweet and sour sauce","Gochujang","Chilli oil","Crispy chilli oil","Miso paste","Pasta sauce","Bolognese sauce","Dolmio","Tomato and basil sauce","Arrabbiata sauce","Carbonara sauce","Lasagne sauce","White sauce","Cheese sauce","Pasta bake sauce","Pesto","Green pesto","Red pesto","Curry sauce","Korma sauce","Tikka masala sauce","Jalfrezi sauce","Rogan josh sauce","Balti sauce","Madras sauce","Butter chicken sauce","Thai green curry paste","Thai red curry paste","Curry paste","Tikka paste","Korma paste","Chow mein sauce","Stir fry sauce","Chilli con carne sauce","Fajita sauce","Enchilada sauce","Casserole mix","Sauce mix","Colmans mix","Gravy","Gravy granules","Bisto","Chicken gravy","Onion gravy","Gravy browning","Stock cubes","Oxo cubes","Chicken stock cubes","Beef stock cubes","Veg stock cubes","Vegetable stock cubes","Stock pots","Knorr stock pots","Bouillon","Marigold bouillon","Liquid stock","Stuffing","Stuffing mix","Paxo","Breadcrumbs","Panko breadcrumbs","Croutons","Oil","Olive oil","Extra virgin olive oil","Light olive oil","Vegetable oil","Sunflower oil","Rapeseed oil","Groundnut oil","Sesame oil","Coconut oil","Avocado oil","Spray oil","Fry light","Cooking spray","Truffle oil","Chilli olive oil","Vinegar","Balsamic vinegar","Balsamic glaze","White wine vinegar","Red wine vinegar","Cider vinegar","Apple cider vinegar","Malt vinegar","Rice vinegar","Sherry vinegar","Distilled vinegar","Salad dressing","Caesar dressing","French dressing","Honey mustard dressing","Lemon juice","Lime juice","Bottled lemon juice"],"Baking":["Flour","Plain flour","Self raising flour","Bread flour","Strong white flour","Wholemeal flour","Strong wholemeal flour","Gluten free flour","Cornflour","Rice flour","Chickpea flour","Gram flour","Spelt flour","Pasta flour","00 flour","Sugar","Caster sugar","Granulated sugar","Icing sugar","Brown sugar","Light brown sugar","Dark brown sugar","Muscovado sugar","Demerara sugar","Golden caster sugar","Jam sugar","Preserving sugar","Sugar cubes","Sweetener","Canderel","Stevia","Agave syrup","Baking powder","Bicarbonate of soda","Bicarb","Cream of tartar","Yeast","Dried yeast","Fast action yeast","Vanilla extract","Vanilla essence","Vanilla pods","Almond extract","Peppermint extract","Food colouring","Gel food colouring","Cocoa powder","Cocoa","Chocolate chips","Dark chocolate chips","White chocolate chips","Cooking chocolate","Baking chocolate","Sprinkles","Hundreds and thousands","Cake decorations","Edible glitter","Ready to roll icing","Fondant icing","Royal icing","Icing pens","Writing icing","Marzipan","Glace cherries","Candied peel","Mixed peel","Ground almonds","Flaked almonds","Desiccated coconut","Coconut flakes","Chopped nuts","Chopped hazelnuts","Sultanas","Currants","Mixed fruit","Dried mixed fruit","Mincemeat","Golden syrup","Black treacle","Treacle","Maple syrup","Date syrup","Cake mix","Brownie mix","Pancake mix","Batter mix","Yorkshire pudding mix","Cupcake cases","Muffin cases","Baking paper","Greaseproof paper","Cake tin liners","Gelatine","Agar agar","Jelly","Jelly crystals","Custard powder","Birds custard","Angel delight","Instant whip","Blancmange"],"Breakfast & spreads":["Cereal","Cornflakes","Frosties","Rice krispies","Coco pops","Crunchy nut","Shreddies","Shredded wheat","Bran flakes","All bran","Fruit and fibre","Special k","Cheerios","Honey cheerios","Weetabix","Weetos","Ready brek","Krave","Cinnamon grahams","Lucky charms","Golden nuggets","Sugar puffs","Honey monster puffs","Oatibix","Alpen","Muesli","Granola","Bircher muesli","Porridge oats","Porridge","Oats","Rolled oats","Jumbo oats","Instant porridge","Porridge pots","Oat so simple","Breakfast bars","Belvita","Cereal bars","Nutri grain","Jam","Strawberry jam","Raspberry jam","Apricot jam","Blackcurrant jam","Cherry jam","Marmalade","Lemon curd","Honey","Runny honey","Set honey","Manuka honey","Peanut butter","Crunchy peanut butter","Smooth peanut butter","Almond butter","Cashew butter","Nutella","Chocolate spread","Biscoff spread","Marmite","Vegemite","Bovril","Crispbread","Ryvita","Toaster pastries","Pop tarts"],"Tea & coffee":["Tea bags","Tea","PG tips","Yorkshire tea","Tetley","Typhoo","Twinings","English breakfast tea","Earl grey","Decaf tea","Green tea","Herbal tea","Peppermint tea","Camomile tea","Chamomile tea","Fruit tea","Rooibos","Redbush tea","Chai","Loose leaf tea","Matcha","Lemon and ginger tea","Coffee","Instant coffee","Nescafe","Kenco","Douwe egberts","Gold blend","Ground coffee","Coffee beans","Espresso","Coffee pods","Nespresso pods","Dolce gusto pods","Tassimo pods","Coffee capsules","Decaf coffee","Coffee bags","Cappuccino sachets","Latte sachets","Coffee filters","Coffee syrup","Hot chocolate","Drinking chocolate","Options hot chocolate","Cadbury hot chocolate","Horlicks","Ovaltine","Malted milk drink","Coffee mate","Coffee creamer","Marshmallows hot chocolate"],"World foods":["Taco shells","Taco kit","Fajita kit","Burrito kit","Enchilada kit","Old el paso","Salsa","Nachos","Chipotle paste","Chipotle sauce","Jalapeno slices","Poppadoms","Popadoms","Naan bread packet","Chapati flour","Atta flour","Bombay mix","Tamarind paste","Rice paper","Spring roll wrappers","Wonton wrappers","Prawn crackers","Sushi nori","Nori","Seaweed snacks","Wasabi","Pickled ginger","Sushi kit","Miso soup","Ramen","Coconut aminos","Kecap manis","Sambal oelek","Laksa paste","Noodle soup","Tahini","Harissa","Rose harissa","Preserved lemons","Pomegranate molasses","Halal meat","Pierogi","Polish sausage","Kabanos","Gherkins polish","Jerk sauce","Jerk marinade","Plantain","Ackee","Callaloo","Scotch bonnet sauce","Hot pepper sauce","Pickled jalapenos","Gochugaru"],"Snacks & sweets":["Crisps","Multipack crisps","Walkers","Walkers crisps","Pringles","Kettle chips","Tyrrells","McCoys","Doritos","Tortilla chips","Hula hoops","Quavers","Wotsits","Monster munch","Skips","Frazzles","Discos","Squares","Wheat crunchies","Mini cheddars","Twiglets","Popcorn","Sweet popcorn","Salted popcorn","Pretzels","Pork scratchings","Poppadom crisps","Lentil crisps","Veggie straws","Rice crackers","Nuts","Peanuts","Salted peanuts","Dry roasted peanuts","Cashews","Almonds","Pistachios","Walnuts","Pecans","Brazil nuts","Hazelnuts","Macadamia nuts","Mixed nuts","Trail mix","Dried fruit","Raisins","Dates","Medjool dates","Dried apricots","Prunes","Dried mango","Dried cranberries","Banana chips","Pumpkin seeds","Sunflower seeds","Biscuits","Digestives","Chocolate digestives","Milk chocolate digestives","Rich tea","Hobnobs","Chocolate hobnobs","Custard creams","Bourbons","Jammie dodgers","Ginger nuts","Malted milk","Shortbread","Jaffa cakes","Cookies","Chocolate chip cookies","Oreos","Party rings","Fig rolls","Garibaldi","Nice biscuits","Viennese whirls","Penguins","Club biscuits","Kit kat","Twix","Breakaway","Wafers","Tunnock's tea cakes","Caramel wafers","Lotus biscoff","Biscotti","Crackers","Cream crackers","Ritz","Tuc","Jacob's crackers","Cheese crackers","Water biscuits","Oatcakes","Rice cakes","Corn cakes","Breadsticks","Grissini","Chocolate","Milk chocolate","Dark chocolate","White chocolate","Dairy milk","Chocolate bars","Sharing bags","Chocolate buttons","Maltesers","Galaxy","Mars bar","Snickers","Bounty","Twirl","Wispa","Crunchie","Aero","Toblerone","Lindt","Ferrero rocher","Celebrations","Heroes","Quality street","Chocolate box","Easter egg","Advent calendar","Selection box","Sweets","Haribo","Jelly babies","Wine gums","Fruit pastilles","Starburst","Skittles","Percy pigs","Midget gems","Liquorice allsorts","Fizzy sweets","Marshmallows","Fudge","Toffee","Mints","Polo mints","Extra strong mints","Tic tacs","Chewing gum","Lollipops","Boiled sweets","Flapjacks","Protein bars","Granola bars","Nature valley","Nakd bars","Trek bars","Kids snacks","Snack bars","Fruit winders","Cake bars","Mini rolls","Swiss rolls","Mr kipling","French fancies","Battenberg","Bakewells","Cherry bakewells","Angel slices","Jaffa cake bars","Lunchbox snacks","Cheese snacks"],"Soft drinks":["Water","Sparkling water","Bottled water","Still water","Mineral water","Flavoured water","Spring water","Big bottles of water","Fizzy water","Orange squash","Blackcurrant squash","Lemon squash","Summer fruits squash","Robinsons","Ribena","Vimto","Cordial","Elderflower cordial","Lime cordial","Rose's lime","Cola","Coke","Coca cola","Diet coke","Coke zero","Pepsi","Pepsi max","Lemonade","Cloudy lemonade","Sprite","7up","Fanta","Fanta orange","Tango","Dr pepper","Irn bru","Lilt","Rubicon","Old jamaica ginger beer","Ginger beer","Ginger ale","Cream soda","Dandelion and burdock","Fizzy drinks","Cans of pop","Pop","Tonic water","Slimline tonic","Fever tree tonic","Soda water","Mixers","Bitter lemon","Club soda","Energy drinks","Red bull","Monster","Lucozade","Lucozade sport","Relentless","Boost","Prime","Sports drinks","Powerade","Gatorade","Juice cartons","Fruit shoots","Capri sun","Kids drinks","Ribena cartons","J2o","Appletiser","Shloer","Fentimans","Kombucha","Coconut water","Oasis","Volvic touch","Iced tea drink"],"Beer, wine & spirits":["Beer","Lager","Ale","Bitter","Stout","Guinness","IPA","Pale ale","Craft beer","Cans of beer","Bottles of beer","Peroni","Stella","Stella artois","Budweiser","Corona","Heineken","Carlsberg","Fosters","Coors","Madri","Birra moretti","San miguel","Kronenbourg","Brewdog","Camden hells","Alcohol free beer","Low alcohol beer","Shandy","Cider","Apple cider","Pear cider","Fruit cider","Strongbow","Bulmers","Kopparberg","Rekorderlig","Thatchers","Magners","Somersby","Wine","Red wine","White wine","Rose wine","Rosé","Sparkling wine","Prosecco","Champagne","Cava","Sauvignon blanc","Pinot grigio","Chardonnay","Merlot","Malbec","Shiraz","Rioja","Cabernet sauvignon","Pinot noir","Rosé wine","Dessert wine","Port","Sherry","Mulled wine","Boxed wine","Cooking wine","Low alcohol wine","Alcohol free wine","Gin","Pink gin","Vodka","Whisky","Whiskey","Scotch","Bourbon","Rum","Spiced rum","White rum","Dark rum","Tequila","Brandy","Cognac","Baileys","Liqueur","Amaretto","Kahlua","Cointreau","Aperol","Pimms","Martini","Vermouth","Sambuca","Jagermeister","Southern comfort","Disaronno","Gin and tonic cans","Premixed cans","Cocktails cans","Hard seltzer","Wkd","Smirnoff ice","Alcopops"],"Household":["Toilet roll","Toilet paper","Loo roll","Andrex","Cushelle","Kitchen roll","Kitchen towel","Plenty","Tissues","Kleenex","Pocket tissues","Napkins","Paper towels","Bin bags","Bin liners","Pedal bin liners","Black bags","Recycling bags","Compost bags","Food bags","Sandwich bags","Freezer bags","Zip lock bags","Cling film","Tin foil","Foil","Kitchen foil","Baking parchment","Foil trays","Food containers","Lunch bags","Washing up liquid","Fairy liquid","Dishwasher tablets","Finish tablets","Dishwasher salt","Rinse aid","Dishwasher cleaner","Sponges","Scourers","Scrubbing brush","Washing up brush","Cloths","Dish cloths","Microfibre cloths","J cloths","Tea towels","Rubber gloves","Washing up bowl","Washing powder","Washing liquid","Laundry detergent","Laundry pods","Washing pods","Persil","Ariel","Bold","Non bio","Bio washing liquid","Fabric conditioner","Fabric softener","Lenor","Comfort","Stain remover","Vanish","Colour catchers","Dryer sheets","Laundry scent beads","Washing machine cleaner","Starch spray","Clothes pegs","Bleach","Thick bleach","Toilet cleaner","Toilet blocks","Toilet duck","Harpic","Domestos","Surface spray","Antibacterial spray","Multi surface cleaner","Kitchen cleaner","Bathroom cleaner","Shower cleaner","Glass cleaner","Window cleaner","Polish","Furniture polish","Floor cleaner","Flash","Cif","Cream cleaner","Mr muscle","Dettol","Cleaning wipes","Antibacterial wipes","Disinfectant","Zoflora","Oven cleaner","Hob cleaner","Limescale remover","Descaler","Drain unblocker","Mould remover","Carpet cleaner","Bar keepers friend","Steel wool","Air freshener","Plug in refill","Febreze","Reed diffuser","Scented candles","Candles","Tea lights","Matches","Lighter","Lighter fluid","Firelighters","Charcoal","BBQ charcoal","Kindling","Logs","Batteries","AA batteries","AAA batteries","9v battery","Button batteries","Light bulbs","LED bulbs","Extension lead","Fuse","Superglue","Sellotape","Tape","Parcel tape","Duct tape","Blu tack","String","Elastic bands","Envelopes","Stamps","Birthday card","Greeting cards","Wrapping paper","Gift bags","Gift wrap","Pens","Notebook","Printer paper","Mop head","Mop","Dusters","Duster","Dustpan and brush","Hoover bags","Vacuum bags","Shoe polish","Plasters for shoes","Insect spray","Fly spray","Ant powder","Mouse traps","Slug pellets","Plant food","Compost","Paper plates","Paper cups","Plastic cups","Party supplies","Balloons","Birthday candles","Cake candles","Straws","Cocktail sticks","Skewers","Kebab skewers","Disposable bbq"],"Toiletries & beauty":["Shampoo","Conditioner","Dry shampoo","Anti dandruff shampoo","Head and shoulders","Kids shampoo","Hair mask","Leave in conditioner","Hair oil","Shower gel","Body wash","Soap","Bar of soap","Hand soap bathroom","Bubble bath","Bath bombs","Bath salts","Shower cream","Dove","Radox","Original source","Toothpaste","Colgate","Sensodyne","Aquafresh","Kids toothpaste","Toothbrush","Electric toothbrush heads","Toothbrush heads","Mouthwash","Listerine","Dental floss","Floss","Interdental brushes","Denture tablets","Teeth whitening","Deodorant","Roll on deodorant","Spray deodorant","Antiperspirant","Sure","Lynx","Mitchum","Body spray","Perfume","Aftershave","Moisturiser","Face moisturiser","Body lotion","Body butter","Face cream","Night cream","Eye cream","Serum","Cetaphil","Nivea","E45","Simple","Cerave","Sun cream","Suncream","Sun lotion","Factor 50","After sun","Fake tan","Self tan","Razors","Razor blades","Disposable razors","Gillette","Venus razor","Shaving foam","Shaving gel","Aftershave balm","Beard oil","Wax strips","Hair removal cream","Veet","Tweezers","Nail clippers","Nail file","Cotton pads","Cotton wool","Cotton buds","Make up remover","Micellar water","Face wash","Facial cleanser","Face wipes","Toner","Face mask","Exfoliator","Lip balm","Vaseline","Lip gloss","Lipstick","Mascara","Foundation","Concealer","Eyeliner","Blusher","Bronzer","Make up brushes","Nail varnish","Nail varnish remover","Hand cream","Foot cream","Hair gel","Hair wax","Hair spray","Hairspray","Mousse","Heat protection spray","Hair ties","Hair bobbles","Hair clips","Kirby grips","Hairbrush","Comb","Hair dye","Root touch up","Sanitary towels","Pads","Tampons","Panty liners","Period pants","Menstrual cup","Incontinence pads","Tena","Hand sanitiser","Hand gel","Wet wipes","Travel size toiletries"],"Health & medicine":["Paracetamol","Ibuprofen","Aspirin","Co codamol","Calpol","Calpol sixplus","Nurofen","Kids nurofen","Painkillers","Cold and flu tablets","Lemsip","Beechams","Day nurse","Night nurse","Cough medicine","Cough syrup","Benylin","Throat sweets","Throat lozenges","Strepsils","Lockets","Halls","Tunes","Olbas oil","Vicks vaporub","Nasal spray","Decongestant","Hay fever tablets","Antihistamines","Piriton","Loratadine","Cetirizine","Eye drops","Allergy eye drops","Rennie","Gaviscon","Indigestion tablets","Antacid","Imodium","Diarrhoea tablets","Laxatives","Senna","Dioralyte","Rehydration sachets","Travel sickness tablets","Sleep aid","Nytol","Plasters","Blister plasters","Bandages","First aid kit","Antiseptic cream","Savlon","Germolene","Hydrocortisone cream","Bite cream","Insect repellent","Deet","Tiger balm","Deep heat","Ibuprofen gel","Ice pack","Thermometer","Hot water bottle","Vitamins","Multivitamins","Vitamin c","Vitamin d","Vitamin b12","Iron tablets","Folic acid","Omega 3","Cod liver oil","Fish oil","Magnesium","Zinc","Probiotics","Kids vitamins","Pregnancy vitamins","Berocca","Protein powder","Contact lens solution","Contact lenses","Reading glasses","Ear plugs","Ear drops","Condoms","Lube","Pregnancy test","Ovulation test","Nicotine patches","Nicotine gum","Vape","Cold sore cream","Athletes foot cream","Verruca treatment","Head lice treatment","Nit comb","Face masks medical","Covid test"],"Baby":["Nappies","Pampers","Huggies","Size 4 nappies","Newborn nappies","Pull ups","Night nappies","Swim nappies","Baby wipes","Water wipes","Nappy bags","Nappy cream","Sudocrem","Metanium","Bepanthen","Formula milk","Baby formula","First infant milk","Follow on milk","Toddler milk","Aptamil","Cow and gate","SMA","Ready made formula","Baby food","Baby food jars","Baby pouches","Pouches","Ella's kitchen","Baby rice","Baby porridge","Baby cereal","Baby snacks","Puffs","Rusks","Baby biscuits","Toddler snacks","Organix","Baby shampoo","Baby bath","Baby lotion","Baby oil","Baby powder","Baby toothpaste","Baby toothbrush","Calpol sachets","Teething gel","Teething granules","Infacol","Gripe water","Dentinox","Bottles","Baby bottles","Teats","Dummies","Sterilising tablets","Milton","Bibs","Breast pads","Nipple cream","Muslins","Sippy cup","Baby spoons"],"Pets":["Dog food","Dry dog food","Wet dog food","Puppy food","Dog treats","Dog biscuits","Dog chews","Dentastix","Bonios","Pedigree","Bakers","Cesar","Dog poo bags","Poo bags","Dog toys","Dog shampoo","Flea treatment","Wormer","Frontline","Cat food","Dry cat food","Wet cat food","Kitten food","Cat pouches","Whiskas","Felix","Sheba","Go cat","Dreamies","Cat treats","Cat milk","Cat litter","Clumping cat litter","Cat toys","Bird seed","Bird food","Fat balls","Suet balls","Mealworms","Fish food","Fish flakes","Rabbit food","Guinea pig food","Hamster food","Small animal food","Hay","Sawdust","Pet bedding","Straw","Chicken feed","Pet wipes"]};
+const STANDARD_SECTIONS = SECTION_DEFS.map(d => d.name);
 const SECTION_SUGGESTIONS = STANDARD_SECTIONS;
-// Other names a shop's section might go by, so filing still works if she renames them.
-const SECTION_ALIASES = {
-  'Fruit & veg':['fruit and veg','fruit & vegetables','fruit and vegetables','produce','veg','fresh produce'],
-  'Bakery':['bread','bread & bakery','bakery & bread'],
-  'Meat & fish':['meat','fish','meat and fish','butcher','butchers','meat & poultry'],
-  'Fridge':['dairy','dairy & eggs','dairy and eggs','chilled','fridge & dairy','milk & dairy'],
-  'Freezer':['frozen','frozen food','frozen foods'],
-  'Cupboard':['food cupboard','store cupboard','tins & packets','tins','dry goods','pantry','larder'],
-  'Snacks & treats':['snacks','crisps & snacks','sweets','biscuits','treats','confectionery'],
-  'Drinks':['beer & wine','alcohol','soft drinks','drinks & alcohol','wine'],
-  'Household':['cleaning','home','household & cleaning','laundry'],
-  'Toiletries':['health & beauty','health and beauty','beauty','pharmacy','personal care'],
-  'Baby':['baby & toddler','baby and toddler','kids'],
-  'Pets':['pet','pet food','pet care']
-};
-const CATALOG = {
-  'Fruit & veg':'Apples,Bananas,Oranges,Satsumas,Clementines,Easy peelers,Lemons,Limes,Grapes,Strawberries,Raspberries,Blueberries,Blackberries,Pears,Peaches,Nectarines,Plums,Cherries,Kiwi,Mango,Pineapple,Melon,Watermelon,Grapefruit,Pomegranate,Avocados,Tomatoes,Cherry tomatoes,Vine tomatoes,Cucumber,Lettuce,Iceberg lettuce,Little gem,Salad leaves,Bagged salad,Spinach,Rocket,Watercress,Peppers,Red peppers,Onions,Red onions,Spring onions,Shallots,Garlic,Ginger,Potatoes,Baby potatoes,New potatoes,Baking potatoes,Sweet potatoes,Carrots,Parsnips,Broccoli,Tenderstem broccoli,Cauliflower,Cabbage,Red cabbage,Brussels sprouts,Kale,Leeks,Celery,Courgettes,Aubergine,Mushrooms,Chestnut mushrooms,Green beans,Runner beans,Sugar snap peas,Mangetout,Asparagus,Corn on the cob,Butternut squash,Beetroot,Swede,Turnip,Radishes,Chillies,Fresh herbs,Coriander,Basil,Parsley,Mint,Rosemary,Thyme,Stir fry veg,Prepared veg,Fruit salad',
-  'Bakery':'Bread,White bread,Brown bread,Wholemeal bread,Seeded bread,Granary bread,Sourdough,Crusty loaf,Baguette,Ciabatta,Focaccia,Rolls,Bread rolls,Burger buns,Brioche buns,Hot dog rolls,Wraps,Tortilla wraps,Pitta bread,Naan bread,Bagels,Crumpets,English muffins,Croissants,Pain au chocolat,Teacakes,Hot cross buns,Scones,Muffins,Doughnuts,Cake,Birthday cake,Brioche,Pancakes,Fruit loaf,Malt loaf,Gluten free bread,Danish pastries,Iced buns,Bakery cookies',
-  'Meat & fish':'Chicken,Chicken breasts,Chicken thighs,Chicken drumsticks,Chicken wings,Whole chicken,Chicken mini fillets,Turkey,Turkey mince,Beef mince,Lean mince,Mince,Lamb mince,Pork mince,Steak,Sirloin steak,Rump steak,Fillet steak,Stewing beef,Diced beef,Beef joint,Pork joint,Lamb joint,Pork chops,Pork loin steaks,Pork belly,Gammon,Gammon steaks,Bacon,Smoked bacon,Streaky bacon,Back bacon,Sausages,Pork sausages,Chipolatas,Lamb chops,Leg of lamb,Diced lamb,Burgers,Beef burgers,Meatballs,Salmon,Salmon fillets,Smoked salmon,Cod,Haddock,Smoked haddock,Prawns,King prawns,Tuna steaks,Mackerel,Sea bass,Fish,Fish pie mix,Duck,Chorizo,Pancetta,Lardons,Liver,Ribs',
-  'Fridge':'Milk,Semi skimmed milk,Skimmed milk,Whole milk,Oat milk,Almond milk,Soya milk,Lactose free milk,Butter,Salted butter,Unsalted butter,Spread,Margarine,Cheese,Cheddar,Mature cheddar,Mild cheddar,Mozzarella,Parmesan,Feta,Halloumi,Brie,Camembert,Stilton,Goats cheese,Cream cheese,Philadelphia,Cottage cheese,Grated cheese,Cheese slices,Cheese strings,Babybel,Eggs,Free range eggs,Large eggs,Yoghurt,Greek yoghurt,Natural yoghurt,Kids yoghurts,Fromage frais,Petits filous,Single cream,Double cream,Whipping cream,Squirty cream,Sour cream,Creme fraiche,Custard,Ham,Sliced ham,Cooked chicken,Chicken slices,Turkey slices,Salami,Pepperoni,Pate,Houmous,Hummus,Coleslaw,Dips,Guacamole,Salsa dip,Fresh pasta,Tortellini,Gnocchi,Fresh soup,Ready meal,Fresh pizza,Pizza,Garlic bread,Quiche,Pork pies,Sausage rolls,Scotch eggs,Orange juice,Apple juice,Fresh juice,Smoothie,Tofu,Puff pastry,Shortcrust pastry,Filo pastry,Pastry,Lard,Olives,Sandwiches,Prepared salad,Pasta salad,Lunchables,Trifle,Cheesecake',
-  'Freezer':'Ice cream,Ice lollies,Frozen peas,Peas,Frozen sweetcorn,Frozen mixed veg,Frozen vegetables,Frozen spinach,Frozen berries,Frozen fruit,Oven chips,Chips,Potato waffles,Hash browns,Frozen roast potatoes,Yorkshire puddings,Fish fingers,Chicken nuggets,Frozen pizza,Frozen chicken,Frozen prawns,Frozen fish,Breaded fish,Battered fish,Fish cakes,Frozen burgers,Ice,Ice cubes,Frozen yoghurt,Frozen desserts,Onion rings,Frozen ready meal,Quorn mince,Quorn pieces,Veggie burgers,Veggie sausages,Spring rolls,Garlic baguette,Arctic roll,Viennetta,Frozen pastry,Frozen chips,Potato wedges,Mozzarella sticks,Chicken kievs,Frozen garlic bread',
-  'Cupboard':'Pasta,Spaghetti,Penne,Fusilli,Macaroni,Lasagne sheets,Tagliatelle,Noodles,Egg noodles,Rice noodles,Instant noodles,Pot noodle,Rice,Basmati rice,Long grain rice,Microwave rice,Risotto rice,Couscous,Quinoa,Flour,Plain flour,Self raising flour,Bread flour,Cornflour,Sugar,Caster sugar,Granulated sugar,Icing sugar,Brown sugar,Baking powder,Bicarbonate of soda,Yeast,Vanilla extract,Cocoa powder,Chocolate chips,Sprinkles,Food colouring,Oil,Olive oil,Extra virgin olive oil,Vegetable oil,Sunflower oil,Rapeseed oil,Spray oil,Coconut oil,Vinegar,Balsamic vinegar,White wine vinegar,Malt vinegar,Salt,Sea salt,Pepper,Black pepper,Stock cubes,Chicken stock cubes,Beef stock cubes,Veg stock cubes,Gravy granules,Gravy,Tinned tomatoes,Chopped tomatoes,Plum tomatoes,Passata,Tomato puree,Baked beans,Beans,Kidney beans,Black beans,Butter beans,Chickpeas,Lentils,Red lentils,Tinned tuna,Tuna,Tinned salmon,Sardines,Tinned sweetcorn,Sweetcorn,Tinned soup,Soup,Coconut milk,Curry paste,Curry sauce,Korma sauce,Tikka masala sauce,Pasta sauce,Bolognese sauce,Pesto,Ketchup,Tomato ketchup,Mayonnaise,Mayo,Brown sauce,Mustard,English mustard,Dijon mustard,Salad cream,Soy sauce,Worcestershire sauce,Sweet chilli sauce,BBQ sauce,Hot sauce,Sriracha,Mint sauce,Horseradish,Cranberry sauce,Honey,Jam,Strawberry jam,Marmalade,Lemon curd,Peanut butter,Nutella,Chocolate spread,Marmite,Golden syrup,Maple syrup,Cereal,Cornflakes,Rice krispies,Coco pops,Shreddies,Bran flakes,Special k,Porridge oats,Porridge,Oats,Granola,Weetabix,Muesli,Tea bags,Tea,Green tea,Herbal tea,Coffee,Instant coffee,Ground coffee,Coffee beans,Coffee pods,Decaf coffee,Hot chocolate,Sweetener,Mixed herbs,Dried herbs,Oregano,Paprika,Smoked paprika,Cumin,Chilli powder,Chilli flakes,Curry powder,Garam masala,Turmeric,Cinnamon,Nutmeg,Garlic powder,Bay leaves,Spices,Custard powder,Jelly,Tinned fruit,Tinned peaches,Pineapple chunks,Rice pudding,Pickles,Gherkins,Pickled onions,Branston pickle,Chutney,Mango chutney,Capers,Stuffing,Stuffing mix,Breadcrumbs,Croutons,Poppadoms,Taco shells,Fajita kit,Fajita seasoning,Gravy browning,Desiccated coconut,Ground almonds,Condensed milk,Evaporated milk,Long life milk,UHT milk,Pasta bake sauce,Cup a soup,Super noodles',
-  'Snacks & treats':'Crisps,Multipack crisps,Walkers,Pringles,Tortilla chips,Doritos,Popcorn,Pretzels,Nuts,Peanuts,Cashews,Almonds,Mixed nuts,Biscuits,Digestives,Chocolate digestives,Rich tea,Hobnobs,Custard creams,Bourbons,Jaffa cakes,Cookies,Shortbread,Crackers,Cream crackers,Ritz,Rice cakes,Oatcakes,Breadsticks,Chocolate,Milk chocolate,Dark chocolate,Chocolate bars,Sweets,Haribo,Mints,Chewing gum,Cereal bars,Flapjacks,Protein bars,Dried fruit,Raisins,Dates,Cake bars,Mini rolls,Twiglets,Mini cheddars,Snack bars,Marshmallows',
-  'Drinks':'Water,Sparkling water,Bottled water,Still water,Squash,Orange squash,Blackcurrant squash,Ribena,Cordial,Cola,Coke,Diet coke,Coke zero,Pepsi,Lemonade,Fizzy drinks,Fanta,Sprite,Irn bru,Energy drinks,Red bull,Lucozade,Tonic water,Slimline tonic,Ginger beer,Ginger ale,Soda water,Juice cartons,Fruit shoots,Beer,Lager,Ale,Cider,Wine,Red wine,White wine,Rose wine,Prosecco,Champagne,Gin,Vodka,Whisky,Rum,Baileys,Alcohol free beer,Low alcohol wine,Mixers,Iced coffee,Milkshake',
-  'Household':'Toilet roll,Toilet paper,Kitchen roll,Tissues,Bin bags,Bin liners,Food bags,Sandwich bags,Freezer bags,Cling film,Tin foil,Foil,Baking paper,Greaseproof paper,Washing up liquid,Fairy liquid,Dishwasher tablets,Dishwasher salt,Rinse aid,Sponges,Scourers,Cloths,Dish cloths,Microfibre cloths,Washing powder,Washing liquid,Laundry detergent,Laundry pods,Washing pods,Fabric conditioner,Fabric softener,Stain remover,Bleach,Toilet cleaner,Toilet blocks,Surface spray,Antibacterial spray,Kitchen cleaner,Bathroom cleaner,Glass cleaner,Polish,Floor cleaner,Cleaning wipes,Antibacterial wipes,Air freshener,Plug in refill,Batteries,AA batteries,AAA batteries,Light bulbs,Matches,Lighter,Candles,Rubber gloves,Hand wash,Hand soap,Mop head,Dusters,Descaler,Drain unblocker,Oven cleaner,Limescale remover,Kitchen towel,Napkins,Paper plates,Party supplies,Birthday candles,Charcoal,Firelighters',
-  'Toiletries':'Shampoo,Conditioner,Dry shampoo,Shower gel,Body wash,Soap,Bubble bath,Bath bombs,Toothpaste,Toothbrush,Toothbrush heads,Mouthwash,Dental floss,Deodorant,Roll on deodorant,Antiperspirant,Moisturiser,Body lotion,Face cream,Sun cream,After sun,Razors,Razor blades,Shaving foam,Shaving gel,Cotton pads,Cotton wool,Cotton buds,Make up remover,Micellar water,Face wash,Face wipes,Hair gel,Hair wax,Hairspray,Hair ties,Hair dye,Sanitary towels,Pads,Tampons,Panty liners,Plasters,Paracetamol,Ibuprofen,Calpol,Vitamins,Vitamin d,Cold and flu tablets,Hay fever tablets,Antihistamines,Rennie,Gaviscon,Throat sweets,Lip balm,Vaseline,Hand cream,Nail varnish remover,Hand sanitiser,Contact lens solution,Eye drops,Condoms,Pregnancy test',
-  'Baby':'Nappies,Baby wipes,Formula milk,Baby formula,Baby food,Baby rice,Baby porridge,Pouches,Baby snacks,Rusks,Nappy cream,Sudocrem,Baby shampoo,Baby bath,Baby lotion,Nappy bags,Calpol sachets,Teething gel,Pull ups,Swim nappies',
-  'Pets':'Dog food,Dry dog food,Wet dog food,Dog treats,Dog biscuits,Dog chews,Cat food,Dry cat food,Wet cat food,Cat treats,Cat litter,Poo bags,Bird seed,Fish food,Rabbit food,Hamster food,Pet bedding,Flea treatment'
-};
 const STAPLES = ['Milk','Bread','Eggs','Butter','Bananas','Apples','Cheese','Chicken breasts','Potatoes','Onions','Tomatoes','Pasta','Rice','Yoghurt','Toilet roll','Tea bags','Coffee','Orange juice'];
 
 const ICON_TICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
@@ -512,7 +532,7 @@ function undo(){
   if (!undoSnap) return;
   state = normalise(JSON.parse(undoSnap));
   undoSnap = null;
-  save(); render(); hideToast();
+  save(); if (typeof resetSharing === 'function') resetSharing(); render(); hideToast();
 }
 
 /* ---------- Lookups ---------- */
@@ -533,10 +553,63 @@ function sectionOf(shop, sectionId){
 const fold = s => key(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9& ]/g, '').replace(/\s+/g, ' ').trim();
 const CAT_INDEX = new Map();   // folded name -> section name
 const CAT_LIST = [];           // [{ name, f, cat }]
-Object.entries(CATALOG).forEach(([cat, list]) => list.split(',').forEach(n => {
+Object.entries(CATALOG).forEach(([cat, list]) => list.forEach(n => {
   const name = n.trim(); const f = fold(name);
   if (name && !CAT_INDEX.has(f)) { CAT_INDEX.set(f, cat); CAT_LIST.push({ name, f, cat }); }
 }));
+
+// Typo tolerance: edit distance with swaps counted as one, giving up early past `max`.
+function editDist(a, b, max){
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev2 = null, prev = Array.from({ length:b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]; let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+      cur.push(v); if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev2 = prev; prev = cur;
+  }
+  return prev[b.length];
+}
+const typoAllowance = n => n >= 8 ? 2 : (n >= 4 ? 1 : 0);
+// How close the typed text is to the start of any word in a name ("origano" vs "oregano").
+function fuzzyPrefixDist(q, f){
+  const max = typoAllowance(q.length);
+  if (!max) return 99;
+  let best = 99;
+  for (let i = 0; i < f.length; i = f.indexOf(' ', i) + 1 || f.length) {
+    if (f[i] !== q[0]) { if (f.indexOf(' ', i) < 0) break; continue; } // typos rarely hit the first letter
+    for (let L = q.length - 1; L <= q.length + 1; L++) {
+      if (L < 1 || i + L > f.length) continue;
+      const d = editDist(q, f.slice(i, i + L), max);
+      if (d < best) best = d;
+      if (best === 0) return 0;
+    }
+    if (f.indexOf(' ', i) < 0) break;
+  }
+  return best <= max ? best : 99;
+}
+// Ranking used for suggestions: higher is better, 0 means no match.
+function matchScore(q, f){
+  if (!q) return 0;
+  if (/ys$/.test(q)) return Math.max(matchScore1(q, f), matchScore1(q.replace(/ys$/, 'ies'), f)); // "nappys"
+  return matchScore1(q, f);
+}
+function matchScore1(q, f){
+  if (f === q) return 7;
+  if (f.startsWith(q)) return 6;
+  if (f.includes(' ' + q)) return 5;
+  const d = fuzzyPrefixDist(q, f);
+  if (d === 1) return 3.5;
+  if (d === 2) return 2.5;
+  if (q.length >= 3 && f.includes(q)) return 1.5;
+  return 0;
+}
+
 // Best guess at which standard section an item belongs to, or null if unknown.
 function categoryFor(name){
   const f = fold(name);
@@ -551,14 +624,30 @@ function categoryFor(name){
   for (const c of CAT_LIST) {
     if (padded.includes(` ${c.f} `) && (!best || c.f.length > best.f.length)) best = c;
   }
-  return best ? best.cat : null;
+  if (best) return best.cat;
+  // Last resort: a close misspelling of a catalogue name ("origano" -> Oregano).
+  const max = typoAllowance(f.length);
+  if (!max) return null;
+  let near = null, nd = max + 1;
+  for (const c of CAT_LIST) {
+    if (Math.abs(c.f.length - f.length) > max) continue;
+    const d = editDist(f, c.f, max);
+    if (d < nd) { nd = d; near = c; if (d === 1) break; }
+  }
+  return near ? near.cat : null;
 }
-// The shop's own section for a standard section name, allowing for renamed sections.
+// The shop's own section for a standard section, allowing for renamed sections and older section sets.
+function sectionNames(name){
+  const def = SECTION_DEFS.find(d => d.name === name);
+  return new Set([fold(name), ...((def && def.aliases) || OLD_SECTION_ALIASES[name] || []).map(fold)]);
+}
 function sectionForCategory(shop, cat){
-  if (!shop || !cat) return null;
-  const names = new Set([fold(cat), ...(SECTION_ALIASES[cat] || []).map(fold)]);
-  const sec = shop.sections.find(s => names.has(fold(s.name)));
-  return sec ? sec.id : null;
+  if (!shop || !cat || !shop.sections.length) return null;
+  const tryNames = names => { const sec = shop.sections.find(x => names.has(fold(x.name))); return sec ? sec.id : null; };
+  const direct = tryNames(sectionNames(cat));
+  if (direct) return direct;
+  const def = SECTION_DEFS.find(d => d.name === cat);
+  return def && def.parent ? tryNames(sectionNames(def.parent)) : null;
 }
 // Where an item should go in a shop: her own filing first, then the catalogue's guess.
 function placeFor(name, shop){
@@ -721,13 +810,21 @@ function toggleDone(id){
   };
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const row = document.querySelector(`.row.item[data-id="${CSS.escape(id)}"]`);
-  if (!it.done && row && !reduce) {
+  if (!it.done && row && !reduce && row.animate) {
     ticking.add(id);
     row.classList.add('ticking');
-    setTimeout(apply, 320);
+    setTimeout(() => {
+      flyToTrolley(row, it);
+      const h = row.getBoundingClientRect().height;
+      row.style.overflow = 'hidden';
+      row.animate([{ height:h + 'px', opacity:1 }, { height:'0px', opacity:0 }], { duration:240, easing:'ease-in', fill:'forwards' })
+        .finished.then(apply, apply);
+    }, 150);
   } else {
     apply();
+    if (!it.done) bumpTrolley();
   }
+  if (!it.done && !state.trolleyHinted) { state.trolleyHinted = true; setTimeout(() => toast('In the trolley. Swipe up on it to see what you have got.'), 900); }
 }
 
 // If the destination already has this item waiting, merge rather than duplicate.
@@ -800,7 +897,7 @@ function clearTicked(){
   state.items = state.items.filter(i => !ids.has(i.id));
   done.forEach(pushRemoved);
   save(); render();
-  toast(`Cleared ${done.length} from your basket`, true);
+  toast(`Cleared ${done.length} from your trolley`, true);
 }
 function restoreRemoved(rid){
   const idx = state.removed.findIndex(r => r.id === rid);
@@ -886,8 +983,11 @@ toastEl.addEventListener('click', e => { if (e.target.closest('[data-act="undo"]
 const tabsEl = $('#tabs'), listEl = $('#list'), doneWrap = $('#doneWrap'), emptyEl = $('#empty');
 const sortBar = $('#sortBar'), suggestEl = $('#suggest'), addInput = $('#addInput');
 
+const tabVisible = id => id === 'list' ? !state.listHidden : !!(shopById(id) && !shopById(id).hidden);
+const visibleTabIds = () => ['list', ...state.shops.map(s => s.id)].filter(tabVisible);
 function render(){
   if (state.tab !== 'list' && !shopById(state.tab)) state.tab = 'list';
+  if (!tabVisible(state.tab)) { const v = visibleTabIds(); if (v.length) state.tab = v[0]; else state.listHidden = false, state.tab = 'list'; }
   const shop = currentShop();
   const color = shop ? shop.color : LIST_COLOR;
   document.documentElement.style.setProperty('--accent', color);
@@ -895,12 +995,15 @@ function render(){
   renderTabs(); renderHeader(); renderList(); renderSuggest(); renderDue(); renderBadge();
   if (typeof renderInstall === 'function') renderInstall();
   if (typeof renderSyncState === 'function') renderSyncState();
+  if (typeof renderTrolley === 'function') renderTrolley();
+  if (typeof renderMoved === 'function') renderMoved();
 }
 
 function renderTabs(){
   const count = id => state.items.filter(i => i.shopId === id && !i.done).length;
   const tabs = [{ id:'list', name:'List', color:LIST_COLOR, n:count(null), isList:true }]
-    .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, n:count(s.id), shared:isShared(s) })));
+    .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, n:count(s.id), shared:isShared(s) })))
+    .filter(t => tabVisible(t.id));
   tabsEl.innerHTML = tabs.map(t => {
     const active = (t.isList ? state.tab === 'list' : state.tab === t.id);
     return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${esc(t.id)}" style="--c:${t.color}" aria-current="${active ? 'page' : 'false'}">`
@@ -917,8 +1020,8 @@ function renderHeader(){
   const todo = items.filter(i => !i.done).length, got = items.length - todo;
   $('#title').textContent = shop ? shop.name : 'Shopping list';
   $('#subtitle').textContent = todo
-    ? `${todo} to get${got ? `, ${got} in basket` : ''}`
-    : (got ? `All done, ${got} in basket` : 'Nothing to get yet');
+    ? `${todo} to get${got ? `, ${got} in the trolley` : ''}`
+    : (got ? `All done, ${got} in the trolley` : 'Nothing to get yet');
   $('#btnShop').hidden = !shop;
   if (shop) $('#btnShop').setAttribute('aria-label', `${shop.name} settings`);
   $('#btnShare').setAttribute('aria-label', shop ? `Share ${shop.name} list` : 'Share everything still to get');
@@ -959,10 +1062,7 @@ function renderList(){
   }
   listEl.innerHTML = rows.join('');
 
-  doneWrap.innerHTML = done.length
-    ? `<div class="done-head"><span>In basket (${done.length})</span><button type="button" data-act="clearTicked">Clear</button></div>`
-      + `<ul class="list done-list" aria-label="In basket">${done.map(i => itemRow(i, opts)).join('')}</ul>`
-    : '';
+  doneWrap.innerHTML = ''; // ticked items live in the trolley at the bottom
 
   // Sort bar and tips (List tab only)
   let bar = '';
@@ -981,7 +1081,7 @@ function renderList(){
         + (state.shops.length ? '' : '<button type="button" class="btn primary" data-act="addShop">Add your shops</button>'
           + (sharingConfigured() ? '<button type="button" class="btn" style="margin:10px auto 0; max-width:240px" data-act="joinStart">Join a shared list</button>' : '')) + '</div>';
   } else if (!undone.length) {
-    emptyEl.innerHTML = '<div class="empty"><h2>All done</h2><p>Everything is in the basket.</p></div>';
+    emptyEl.innerHTML = '<div class="empty"><h2>All done</h2><p>Everything is in the trolley.</p></div>';
   } else {
     emptyEl.innerHTML = '';
   }
@@ -995,13 +1095,14 @@ function renderSuggest(){
   const onTab = new Set(tabItems().filter(i => !i.done).map(i => fold(i.name)));
   const hist = Object.entries(state.history).filter(([k]) => !onTab.has(fold(k)));
   const local = h => (shopId && h.shopId === shopId) ? 1 : 0;
-  const score = f => f.startsWith(q) ? 3 : (f.includes(' ' + q) ? 2 : (f.includes(q) ? 1 : 0));
+  const score = f => matchScore(q, f);
   let html = '';
   if (q) {
     // Things she has added before rank above the built-in catalogue.
     const seen = new Set();
-    const mine = hist.map(([k, h]) => ({ k, h, f:fold(h.name), s:score(fold(h.name)) + 0.5 }))
-      .filter(e => e.s > 0.5);
+    // Her own items get a small boost so they rank above catalogue items with the same match.
+    const mine = hist.map(([k, h]) => ({ k, h, f:fold(h.name), s:score(fold(h.name)) }))
+      .filter(e => e.s > 0).map(e => Object.assign(e, { s:e.s + 0.4 }));
     mine.forEach(e => seen.add(e.f));
     const cat = CAT_LIST.filter(c => !seen.has(c.f) && !onTab.has(c.f))
       .map(c => ({ c, f:c.f, s:score(c.f) })).filter(e => e.s > 0);
@@ -1118,6 +1219,7 @@ longPress(tabsEl, '.tab', el => {
 }, el => {
   const id = el.dataset.tab;
   if (id && id !== 'list') { switchTab(id); openShopSheet(id); }
+  else if (id === 'list') openTabsSheet();
 });
 tabsEl.addEventListener('click', e => {
   if (e.detail !== 0) return; // keyboard activation only; touch and mouse use pointer events
@@ -1220,7 +1322,8 @@ $('#addForm').addEventListener('submit', e => {
   if (addItem(addInput.value)) addInput.value = '';
   renderSuggest();
 });
-addInput.addEventListener('focus', renderSuggest);
+addInput.addEventListener('focus', () => { renderSuggest(); document.body.classList.add('typing'); });
+addInput.addEventListener('blur', () => document.body.classList.remove('typing'));
 addInput.addEventListener('input', renderSuggest);
 addInput.addEventListener('blur', () => setTimeout(renderSuggest, 0));
 suggestEl.addEventListener('pointerdown', e => e.preventDefault()); // keep the keyboard open
@@ -1481,6 +1584,57 @@ function openSectionPrompt(shopId, itemId, returnToShop){
   });
 }
 
+const OLD_STANDARD = ['Fruit & veg','Bakery','Meat & fish','Fridge','Freezer','Cupboard','Snacks & treats','Drinks','Household','Toiletries','Baby','Pets'];
+function needsSectionUpgrade(shop){
+  if (!shop.sections.length) return false;
+  const names = new Set(shop.sections.map(x => fold(x.name)));
+  const oldHits = OLD_STANDARD.filter(n => names.has(fold(n)) && !STANDARD_SECTIONS.some(m => fold(m) === fold(n))).length;
+  return oldHits >= 2;
+}
+function upgradeSections(shop){
+  snapshot();
+  const stdFold = new Set([...STANDARD_SECTIONS, ...OLD_STANDARD].map(fold));
+  const used = new Set();
+  const next = STANDARD_SECTIONS.map(n => {
+    const ex = shop.sections.find(x => !used.has(x.id) && fold(x.name) === fold(n));
+    if (ex) { used.add(ex.id); return { id:ex.id, name:n }; }
+    return { id:uid(), name:n };
+  });
+  const custom = shop.sections.filter(x => !used.has(x.id) && !stdFold.has(fold(x.name)));
+  const gone = new Set(shop.sections.filter(x => !used.has(x.id) && stdFold.has(fold(x.name))).map(x => x.id));
+  shop.sections = next.concat(custom);
+  let moved = 0;
+  itemsIn(shop.id).forEach(i => {
+    if (i.sectionId && !gone.has(i.sectionId)) return; // her own placement in a kept or custom section stays
+    const ns = sectionForCategory(shop, categoryFor(i.name));
+    if (ns !== i.sectionId) { i.sectionId = ns; i.updatedAt = Date.now(); moved++; }
+  });
+  save(); render();
+  toast(`Aisles updated${moved ? `, ${moved} ${moved === 1 ? 'item' : 'items'} refiled` : ''}`, true);
+}
+
+function openTabsSheet(){
+  const rows = [{ id:'list', name:'List', color:LIST_COLOR, hidden:!!state.listHidden }]
+    .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, hidden:!!s.hidden, shared:isShared(s) })));
+  const nShops = state.shops.length;
+  openSheet(
+    '<h2>Tabs at the top</h2><p class="sub">Choose which lists show along the top, and their order. Hidden lists keep their items, and still appear when you hold an item to send it somewhere.</p>'
+    + rows.map((r, i) => `<div class="secrow tabrow"><span class="tdot2" style="--c:${r.color}"></span><span class="nm">${esc(r.name)}${r.shared ? ' ' + ICON_CLOUD : ''}<small>${r.hidden ? 'Hidden' : 'Shown'}</small></span>`
+      + (r.id === 'list' ? '' :
+        `<button type="button" class="mini" data-act="tabUp" data-tab="${esc(r.id)}" ${i <= 1 ? 'disabled' : ''} aria-label="Move ${esc(r.name)} left">${ICON_UP}</button>`
+        + `<button type="button" class="mini" data-act="tabDown" data-tab="${esc(r.id)}" ${i >= nShops ? 'disabled' : ''} aria-label="Move ${esc(r.name)} right">${ICON_DOWN}</button>`)
+      + `<button type="button" class="switch" role="switch" aria-checked="${!r.hidden}" data-act="tabToggle" data-tab="${esc(r.id)}" aria-label="Show ${esc(r.name)}"><span></span></button></div>`).join(''),
+    { type:'tabs' }
+  );
+}
+function setTabHidden(id, hidden){
+  const visible = visibleTabIds();
+  if (hidden && visible.length <= 1 && visible[0] === id) { toast('Keep at least one tab showing'); return false; }
+  if (id === 'list') state.listHidden = hidden; else { const s = shopById(id); if (s) s.hidden = hidden; }
+  save(); render();
+  return true;
+}
+
 function openShopSheet(id){
   const s = shopById(id); if (!s) return;
   const sw = PALETTE.map(c => `<button type="button" class="swatch" data-act="setColor" data-color="${c}" style="--c:${c}" aria-pressed="${c === s.color}" aria-label="Use this colour"></button>`).join('');
@@ -1502,6 +1656,8 @@ function openShopSheet(id){
     + `<h3 class="sh-label">Sections, in walking order</h3>${secs}`
     + '<button type="button" class="btn wide" data-act="addSection">+ Add section</button>'
     + (n ? '<button type="button" class="btn wide" data-act="clearSections">Remove all sections</button>' : '')
+    + (needsSectionUpgrade(s) ? '<p class="note">There is a newer, more detailed set of aisles, such as Herbs &amp; spices, Baking and Tea &amp; coffee.</p><button type="button" class="btn primary wide" data-act="upgradeSections">Update to the new aisles</button>' : '')
+    + `<h3 class="sh-label">Top bar</h3><button type="button" class="btn wide" style="margin-top:0" data-act="toggleHide">${s.hidden ? 'Show this tab at the top' : 'Hide this tab from the top'}</button>`
     + (shared ? '<button type="button" class="btn danger wide" data-act="deleteShop">Leave shared list</button>'
               : '<button type="button" class="btn danger wide" data-act="deleteShop">Delete shop</button>'),
     { type:'shop', id }
@@ -1532,11 +1688,15 @@ function openSettings(){
     + `<p class="note">Last backup: <strong>${esc(ago(state.lastBackupAt))}</strong></p>`
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="backup">Back up now</button>'
     + '<label class="btn">Restore<input type="file" id="restoreInput" accept=".json,application/json" hidden></label></div>'
+    + '<h3 class="sh-label">Layout</h3>'
+    + '<button type="button" class="btn wide" style="margin-top:0" data-act="tabsSheet">Tabs at the top</button>'
     + '<h3 class="sh-label">Sharing</h3>'
     + (sharingWarning() ? '<p class="note err">Sharing needs attention. Open Shared lists for details.</p>' : '')
     + `<button type="button" class="btn wide" style="margin-top:0" data-act="shareHub">Shared lists${sharedShops().length ? ` (${sharedShops().length})` : ''}</button>`
+    + (sharingConfigured() ? '<h3 class="sh-label">Moving</h3><button type="button" class="btn wide" style="margin-top:0" data-act="movePaste">Bring lists from another phone or address</button>'
+       + '<button type="button" class="btn wide" data-act="moveStart">Send my lists to another phone or address</button>' : '')
     + `<h3 class="sh-label">Recently removed and cleared</h3>${remHtml}`
-    + `<p class="ver">Basket ${APP_VERSION}</p>`,
+    + `<p class="ver">Virtual Trolley ${APP_VERSION}</p>`,
     { type:'settings' }
   );
 }
@@ -1545,6 +1705,11 @@ sheet.addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target, kind = form.dataset.form;
   if (kind === 'prompt') { runPrompt(form.querySelector('input').value); return; }
+  if (kind === 'move') {
+    const id = parseMoveCode(form.querySelector('input.code').value);
+    if (!id) { moveError('No move code found. They look like MOVE-XXXX-XXXX-XXXX-XXXX.'); return; }
+    importMove(id); return;
+  }
   if (kind !== 'join') return;
   form.querySelectorAll('button').forEach(b => b.disabled = true);
   form.querySelector('.err').hidden = true;
@@ -1682,7 +1847,7 @@ sheet.addEventListener('click', e => {
       break;
     case 'sendCode': {
       const s3 = shopById(ctx.id); if (!isShared(s3)) break;
-      const text = `Join my "${s3.name}" list in Basket. Copy this whole message, open Basket, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}\n\nDon't have Basket yet? Open ${location.origin}${location.pathname} in Safari.`;
+      const text = `Join my "${s3.name}" list in Virtual Trolley. Copy this whole message, open Virtual Trolley, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}\n\nDon't have Virtual Trolley yet? Open ${location.origin}${location.pathname} in Safari.`;
       if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text);
       break;
     }
@@ -1693,10 +1858,43 @@ sheet.addEventListener('click', e => {
       if (ctx.type === 'restore' && ctx.data) {
         snapshot();
         state = normalise(ctx.data);
-        save(); render(); closeSheet();
-        toast('Backup restored', true);
+        save(); resetSharing(); render(); closeSheet();
+        toast(ctx.moved ? 'Your lists have moved in' : 'Backup restored', true);
+        if (ctx.moved) finishMove(ctx.moveId);
       }
       break;
+    case 'clearTicked': clearTicked(); closeSheet(); break;
+    case 'upgradeSections': if (shop) { upgradeSections(shop); openShopSheet(shop.id); } break;
+    case 'toggleHide':
+      if (shop && setTabHidden(shop.id, !shop.hidden)) { toast(shop.hidden ? `${shop.name} hidden. Long-press List or open Settings to show it again.` : `${shop.name} is back at the top`); closeSheet(); }
+      break;
+    case 'tabsSheet': openTabsSheet(); break;
+    case 'tabToggle': {
+      const id = b.dataset.tab;
+      const hidden = id === 'list' ? !state.listHidden : !(shopById(id) || {}).hidden;
+      if (setTabHidden(id, hidden)) openTabsSheet();
+      break;
+    }
+    case 'tabUp': case 'tabDown': {
+      const i = state.shops.findIndex(x => x.id === b.dataset.tab);
+      const j = act === 'tabUp' ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= state.shops.length) break;
+      [state.shops[i], state.shops[j]] = [state.shops[j], state.shops[i]];
+      save(); render(); openTabsSheet();
+      break;
+    }
+    case 'moveStart': startMove(b); break;
+    case 'moveCopy': if (ctx.code) copyText(ctx.code); break;
+    case 'movePaste': pasteMove(); break;
+    case 'welcomeShops': openShopPicker(); break;
+    case 'pickShop': b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); break;
+    case 'pickDone': {
+      const picked = [...sheet.querySelectorAll('[data-act="pickShop"][aria-pressed="true"]')].map(x => x.dataset.v);
+      picked.forEach(n => addShop(n));
+      save(); render(); closeSheet();
+      if (picked.length) toast(`Added ${picked.length} ${picked.length === 1 ? 'shop' : 'shops'}. Hold any item to send it to one.`);
+      break;
+    }
     case 'cancel':
       closeSheet();
       break;
@@ -1710,7 +1908,7 @@ sheet.addEventListener('change', async e => {
   let obj = null;
   try { obj = JSON.parse(await file.text()); } catch(err) { obj = null; }
   const data = obj && obj.data ? obj.data : obj;
-  if (!isValid(data)) { toast("That file isn't a Basket backup"); return; }
+  if (!isValid(data)) { toast("That file isn't a Virtual Trolley backup"); return; }
   const when = obj && obj.exportedAt ? new Date(obj.exportedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : 'an unknown date';
   openSheet(
     '<h2>Replace your list with this backup?</h2>'
@@ -1725,12 +1923,12 @@ sheet.addEventListener('change', async e => {
 /* ---------- Backup ---------- */
 async function backup(){
   const stamp = new Date().toISOString().slice(0, 10);
-  const name = `basket-backup-${stamp}.json`;
-  const json = JSON.stringify({ app:'basket', version:1, exportedAt:new Date().toISOString(), data:state });
+  const name = `trolley-backup-${stamp}.json`;
+  const json = JSON.stringify({ app:'trolley', version:1, exportedAt:new Date().toISOString(), data:state });
   try {
     const file = new File([json], name, { type:'application/json' });
     if (navigator.canShare && navigator.canShare({ files:[file] })) {
-      await navigator.share({ files:[file], title:'Basket backup' });
+      await navigator.share({ files:[file], title:'Virtual Trolley backup' });
     } else {
       const url = URL.createObjectURL(file);
       const a = document.createElement('a');
@@ -1770,20 +1968,20 @@ window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instal
 window.addEventListener('appinstalled', () => { installPrompt = null; installHidden = true; renderInstall(); });
 function renderInstall(){
   const el = $('#install');
-  if (isStandalone() || installHidden || (!isIOS && !installPrompt)) { el.innerHTML = ''; return; }
+  if (isStandalone() || installHidden || IS_OLD_HOME || (!isIOS && !installPrompt)) { el.innerHTML = ''; return; }
   const moving = state.items.length
     ? '<p class="warn">Your list here won\'t carry over to the app. To keep it, tap Settings, then Back up now, and Restore it inside the app.</p>' : '';
   if (installPrompt) {
-    el.innerHTML = '<section class="install"><h2>Install Basket</h2><p>It opens like an app and works with no signal.</p>' + moving
+    el.innerHTML = '<section class="install"><h2>Install Virtual Trolley</h2><p>It opens like an app and works with no signal.</p>' + moving
       + '<div class="row-btns"><button type="button" class="btn" data-act="installLater">Not now</button>'
       + '<button type="button" class="btn primary" data-act="installNow">Install</button></div></section>';
     return;
   }
-  el.innerHTML = '<section class="install"><h2>Add Basket to your Home Screen</h2>'
+  el.innerHTML = '<section class="install"><h2>Add Virtual Trolley to your Home Screen</h2>'
     + '<p>It then opens like an app and works with no signal.</p><ol>'
     + `<li>Tap Share ${SHARE_GLYPH} in Safari. If you can't see it, tap ••• first.</li>`
     + '<li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>'
-    + '<li>Tap <strong>Add</strong>, then open Basket from your Home Screen.</li></ol>' + moving
+    + '<li>Tap <strong>Add</strong>, then open Virtual Trolley from your Home Screen.</li></ol>' + moving
     + '<div class="row-btns"><button type="button" class="btn" data-act="installLater">Not now</button></div></section>';
 }
 $('#install').addEventListener('click', async e => {
@@ -1814,17 +2012,17 @@ function newListId(){
   if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes); else for (let i = 0; i < 16; i++) bytes[i] = Math.random() * 256;
   return [...bytes].map(b => CODE_ALPHABET[b % 32]).join('');
 }
-const formatCode = id => 'BSKT-' + id.match(/.{1,4}/g).join('-');
+const formatCode = id => 'TRLY-' + id.match(/.{1,4}/g).join('-');
 function parseCode(raw){
   let s = String(raw || '');
   const m = s.match(/#join=([^&\s]+)/); if (m) s = decodeURIComponent(m[1]);
   else {
     // A whole pasted message: pick out the BSKT code inside it.
-    const c = s.match(/BSKT[\s-]*([A-Z0-9]{4}[\s-]*){4}/i);
+    const c = s.match(/(BSKT|TRLY)[\s-]*([A-Z0-9]{4}[\s-]*){4}/i);
     if (c) s = c[0];
   }
   s = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (s.startsWith('BSKT')) s = s.slice(4);
+  if (s.startsWith('BSKT') || s.startsWith('TRLY')) s = s.slice(4); // BSKT: codes made before the rename
   s = s.replace(/O/g, '0').replace(/I/g, '1'); // forgive the usual misreads
   if (s.length !== 16 || [...s].some(c => !CODE_ALPHABET.includes(c))) return null;
   return s;
@@ -1858,7 +2056,7 @@ function loadFirebase(){
 function fbErrorText(e){
   const code = (e && e.code) || '';
   if (!e) return 'Something went wrong.';
-  if (e.message === 'not-configured') return "Sharing isn't set up on this copy of Basket yet. See the README.";
+  if (e.message === 'not-configured') return "Sharing isn't set up on this copy of Virtual Trolley yet. See the README.";
   if (code.includes('permission-denied')) return 'Not allowed. Check the Firestore rules and that Anonymous sign-in is turned on.';
   if (code.includes('unavailable') || code.includes('network') || /Failed to fetch|import/i.test(e.message || '')) return 'No signal. Try again when you are online.';
   if (code.includes('operation-not-allowed')) return 'Anonymous sign-in is not turned on in Firebase.';
@@ -1936,6 +2134,7 @@ function subscribe(shop){
     render();
   }, err => { L.error = err; renderSyncState(); }));
 }
+function resetSharing(){ [...live.keys()].forEach(unsubscribe); startSharing(); }
 function unsubscribe(id){
   const L = live.get(id); if (!L) return;
   L.unsubs.forEach(u => { try { u(); } catch(e) {} });
@@ -2031,7 +2230,7 @@ async function createSharedList(name){
 }
 async function joinSharedList(code){
   const listId = parseCode(code);
-  if (!listId) throw new Error('That is not a Basket sharing code. It looks like BSKT-XXXX-XXXX-XXXX-XXXX.');
+  if (!listId) throw new Error('That is not a Virtual Trolley sharing code. It looks like TRLY-XXXX-XXXX-XXXX-XXXX.');
   const existing = state.shops.find(s => isShared(s) && s.shared.listId === listId);
   if (existing) { state.tab = existing.id; save(); render(); return { shop:existing, already:true }; }
   await loadFirebase();
@@ -2067,7 +2266,7 @@ function openShareHub(){
     '<h2>Shared lists</h2>'
     + '<p class="sub">A shared list is a tab everyone with its code can see and edit, live. Your own shops stay private.</p>'
     + problem
-    + (!sharingConfigured() ? '<p class="note err">Sharing isn\'t set up on this copy of Basket yet. The README explains the one-off setup.</p>' : '')
+    + (!sharingConfigured() ? '<p class="note err">Sharing isn\'t set up on this copy of Virtual Trolley yet. The README explains the one-off setup.</p>' : '')
     + (rows ? `<h3 class="sh-label">Your shared lists</h3>${rows}` : '')
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="joinStart">Join a list</button>'
     + '<button type="button" class="btn primary" data-act="createStart">Create a list</button></div>',
@@ -2112,7 +2311,7 @@ function openJoinShared(prefill){
     + '</div>'
     + '<p class="or">or type it</p>'
     + '<form data-form="join" autocomplete="off">'
-    + `<input class="field code" name="code" placeholder="BSKT-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" value="${esc(prefill ? formatCode(prefill) : '')}" aria-label="Sharing code">`
+    + `<input class="field code" name="code" placeholder="TRLY-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" value="${esc(prefill ? formatCode(prefill) : '')}" aria-label="Sharing code">`
     + '<p class="note err" hidden></p>'
     + '<div class="sheet-actions"><button type="submit" class="btn">Join</button></div></form>',
     { type:'join' }
@@ -2125,7 +2324,7 @@ async function joinWith(raw, errorTarget){
     if (errorTarget) { const f = sheet.querySelector('form[data-form="join"]'); if (f) { const p = f.querySelector('.err'); p.textContent = msg; p.hidden = false; return; } }
     toast(msg);
   };
-  if (!id) { fail('No Basket code found. Codes look like BSKT-XXXX-XXXX-XXXX-XXXX.'); return false; }
+  if (!id) { fail('No Virtual Trolley code found. Codes look like TRLY-XXXX-XXXX-XXXX-XXXX.'); return false; }
   try {
     const r = await joinSharedList(id);
     closeSheet();
@@ -2143,6 +2342,7 @@ async function pasteAndJoin(){
     toast('Hold the box below and choose Paste');
     return;
   }
+  if (parseMoveCode(text)) { importMove(parseMoveCode(text)); return; }
   const inp = sheet.querySelector('input.code');
   const id = parseCode(text);
   if (inp && id) inp.value = formatCode(id);
@@ -2200,7 +2400,7 @@ async function startScan(){
       const hit = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts:'dontInvert' });
       if (!hit || !hit.data) return;
       const id = parseCode(hit.data);
-      if (!id) { sheet.querySelector('.scanbox p').textContent = "That isn't a Basket code"; return; }
+      if (!id) { sheet.querySelector('.scanbox p').textContent = "That isn't a Virtual Trolley code"; return; }
       stopScan();
       if (navigator.vibrate) navigator.vibrate(30);
       sheet.querySelector('.scanbox p').textContent = 'Joining';
@@ -2224,7 +2424,7 @@ function openShowCode(id){
   } catch(e) { svg = ''; }
   openSheet(
     `<h2>Share ${esc(shop.name)}</h2>`
-    + '<p class="sub">On their phone, open Basket and tap <strong>+ Add</strong>, then <strong>Join a shared list</strong>, then <strong>Scan their code</strong>.</p>'
+    + '<p class="sub">On their phone, open Virtual Trolley and tap <strong>+ Add</strong>, then <strong>Join a shared list</strong>, then <strong>Scan their code</strong>.</p>'
     + (svg ? `<div class="qr">${svg}</div>` : '')
     + `<p class="bigcode">${esc(code)}</p>`
     + '<p class="note">Anyone with this code can see and change the list, so only give it to people you want on it.</p>'
@@ -2236,11 +2436,11 @@ function openSafariJoin(listId){
   const code = formatCode(listId);
   openSheet(
     '<h2>You have been sent a shared list</h2>'
-    + '<p class="sub">Codes are entered inside the Basket app, not in Safari.</p>'
+    + '<p class="sub">Codes are entered inside the Virtual Trolley app, not in Safari.</p>'
     + '<ol class="steps"><li>Tap <strong>Copy code</strong> below.</li>'
-    + '<li>Open Basket from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
+    + '<li>Open Virtual Trolley from your Home Screen. If it isn\'t there yet, add it first using the steps on this page.</li>'
     + '<li>Tap <strong>+ Add</strong>, <strong>Join a shared list</strong>, then <strong>Paste a code</strong>.</li></ol>'
-    + '<p class="note">Next time, scan from inside Basket instead: + Add, Join a shared list, Scan their code.</p>'
+    + '<p class="note">Next time, scan from inside Virtual Trolley instead: + Add, Join a shared list, Scan their code.</p>'
     + `<p class="bigcode">${esc(code)}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="copyCode">Copy code</button></div>',
     { type:'safarijoin', code }
@@ -2255,6 +2455,269 @@ async function copyText(text){
   catch(e) { toast("Couldn't copy. Write the code down instead."); }
 }
 
+
+/* ---------- Trolley dock ---------- */
+const dock = $('#dock');
+const flying = new Set();
+const GOOD_COLOURS = { 'Fruit & veg':'#6DBE5A', 'Bakery':'#D9A05B', 'Meat & poultry':'#D6544F', 'Fish & seafood':'#5BA4D9', 'Dairy & eggs':'#F4F1E8',
+  'Cheese':'#F2C94C', 'Chilled & deli':'#E88AA0', 'Frozen':'#A8DCF5', 'Herbs & spices':'#C0783A', 'Pasta, rice & grains':'#E8C77A', 'Tins & jars':'#B0B7BF',
+  'Sauces & condiments':'#E2553B', 'Baking':'#EFE3C8', 'Breakfast & spreads':'#E9A23B', 'Tea & coffee':'#8A5A3B', 'World foods':'#E07A2E',
+  'Snacks & sweets':'#B05BD9', 'Soft drinks':'#3F8CFF', 'Beer, wine & spirits':'#8E2B45', 'Household':'#7FA7D9', 'Toiletries & beauty':'#F0A6CA',
+  'Health & medicine':'#5CC3B0', 'Baby':'#FFD38A', 'Pets':'#9C7F5F' };
+const trolleyItems = () => tabItems().filter(i => i.done && !flying.has(i.id)).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
+// Draw the shopping inside the basket: one little package per item, tallest peeking over the rim.
+function renderGoods(newId){
+  const g = dock.querySelector('.goods');
+  const items = trolleyItems().slice(-12);
+  const slots = 12, left = 34, width = 100;
+  g.innerHTML = items.map((it, i) => {
+    const seed = [...it.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+    const w = 9 + seed % 5, h = 20 + (seed >> 3) % 16; // tallest ones poke over the rim
+    const x = left + (i % slots) * (width / slots) + ((seed >> 7) % 3) - 1;
+    const y = 47 - h - (i >= slots ? 6 : 0);
+    const col = GOOD_COLOURS[categoryFor(it.name)] || '#F5A524';
+    const rx = (seed >> 5) % 2 ? 4 : 2;
+    return `<rect class="good${it.id === newId ? ' landing' : ''}" x="${x.toFixed(1)}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${col}" stroke="rgba(0,0,0,.18)" stroke-width="1"/>`;
+  }).join('');
+  const landed = g.querySelector('.landing');
+  if (landed && landed.animate) landed.animate([{ transform:'translateY(-14px) scaleY(1.1)' }, { transform:'translateY(1px) scaleY(.9)', offset:.7 }, { transform:'none' }], { duration:260, easing:'ease-in' });
+}
+function renderTrolley(newId){
+  const show = tabItems().length > 0;
+  dock.hidden = !show;
+  document.body.classList.toggle('with-dock', show);
+  layer.classList.toggle('with-trolley', show);
+  if (!show) return;
+  const n = trolleyItems().length;
+  dock.querySelector('.tcount').textContent = n ? String(n) : '';
+  dock.querySelector('.hint').textContent = n ? 'Swipe up to look inside' : 'Tap an item to drop it in';
+  dock.setAttribute('aria-label', n ? `Your trolley has ${n} ${n === 1 ? 'item' : 'items'}. Open it` : 'Your trolley is empty');
+  renderGoods(newId);
+  if (sheetCtx && sheetCtx.type === 'trolley') openTrolleySheet(true);
+}
+function bumpTrolley(){
+  const cart = dock.querySelector('.cart');
+  if (!cart.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  cart.animate([{ transform:'none' }, { transform:'translateY(4px) rotate(-1.5deg)', offset:.3 }, { transform:'translateY(-2px) rotate(1deg)', offset:.65 }, { transform:'none' }], { duration:420, easing:'ease-out' });
+  const c = dock.querySelector('.tcount');
+  if (c.animate) c.animate([{ transform:'scale(1)' }, { transform:'scale(1.35)' }, { transform:'scale(1)' }], { duration:300 });
+}
+function flyToTrolley(row, item){
+  if (dock.hidden) return;
+  const from = row.querySelector('.name').getBoundingClientRect();
+  const cart = dock.querySelector('.cart').getBoundingClientRect();
+  const pill = document.createElement('div');
+  pill.className = 'flyer';
+  pill.textContent = item.name + qtyLabel(item.qty);
+  pill.style.left = from.left + 'px';
+  pill.style.top = (from.top + from.height / 2 - 18) + 'px';
+  document.body.appendChild(pill);
+  const p = pill.getBoundingClientRect();
+  // Aim at the mouth of the basket, a little to one side each time so things don't land on one spot.
+  const tx = cart.left + cart.width * (0.42 + ((flying.size % 4) - 1.5) * 0.06);
+  const ty = cart.top + cart.height * 0.3;
+  const dx = tx - (p.left + p.width / 2), dy = ty - (p.top + p.height / 2);
+  flying.add(item.id); renderTrolley();
+  const finish = () => { pill.remove(); flying.delete(item.id); renderTrolley(item.id); bumpTrolley(); };
+  // A little hop, then it falls under gravity (easing in) and shrinks as it drops into the basket.
+  pill.animate([
+    { transform:'translate(0, 0) scale(1) rotate(0)', opacity:1, easing:'cubic-bezier(.2, .7, .4, 1)' },
+    { transform:`translate(${dx * .15}px, -28px) scale(1.04) rotate(-4deg)`, opacity:1, offset:.22, easing:'cubic-bezier(.55, 0, .9, .45)' },
+    { transform:`translate(${dx}px, ${dy}px) scale(.32) rotate(${dx > 0 ? 14 : -14}deg)`, opacity:.95, offset:.92 },
+    { transform:`translate(${dx}px, ${dy + 10}px) scale(.2) rotate(${dx > 0 ? 16 : -16}deg)`, opacity:0 }
+  ], { duration:Math.min(900, 520 + Math.abs(dy) * .35), fill:'forwards' }).finished.then(finish, finish);
+}
+
+/* Swipe up (or tap) to look inside */
+let dockDrag = null;
+dock.addEventListener('pointerdown', e => { dockDrag = { y0:e.clientY, dy:0 }; dock.classList.add('drag'); try { dock.setPointerCapture(e.pointerId); } catch(_) {} });
+dock.addEventListener('pointermove', e => {
+  if (!dockDrag) return;
+  dockDrag.dy = e.clientY - dockDrag.y0;
+  dock.style.transform = dockDrag.dy < 0 ? `translateY(${Math.max(dockDrag.dy * .35, -24)}px)` : '';
+});
+const dockEnd = e => {
+  if (!dockDrag) return;
+  const d = dockDrag; dockDrag = null;
+  dock.classList.remove('drag'); dock.style.transform = '';
+  if (e.type === 'pointercancel') return;
+  if (d.dy < -24 || Math.abs(d.dy) < 8) openTrolleySheet();
+};
+dock.addEventListener('pointerup', dockEnd);
+dock.addEventListener('pointercancel', dockEnd);
+dock.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrolleySheet(); } });
+
+function openTrolleySheet(refresh){
+  const items = trolleyItems().slice().reverse();
+  const shop = currentShop();
+  const html = `<h2>In your trolley${items.length ? ` (${items.length})` : ''}</h2>`
+    + `<p class="sub">${items.length ? 'Tap anything you put back to return it to the list.' : 'Nothing in it yet. Tap items on your list and they drop in here.'}</p>`
+    + (items.length ? `<ul class="list trolley-list" aria-label="In trolley">${items.map(i => itemRow(i, { showUsual:!shop })).join('')}</ul>`
+        + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Keep shopping</button><button type="button" class="btn primary" data-act="clearTicked">Done, empty it</button></div>'
+      : '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Close</button></div>');
+  if (refresh && sheetCtx && sheetCtx.type === 'trolley') {
+    const top = sheet.scrollTop;
+    sheet.innerHTML = sheet.querySelector('.sheet-top').outerHTML + html;
+    sheet.scrollTop = top;
+  } else openSheet(html, { type:'trolley' });
+}
+// Tapping an item inside the trolley puts it back on the list.
+sheet.addEventListener('click', e => {
+  if (!sheetCtx || sheetCtx.type !== 'trolley') return;
+  const row = e.target.closest('.row.item'); if (!row) return;
+  toggleDone(row.dataset.id);
+});
+
+/* ---------- Moving between addresses or phones ----------
+   The whole list (private shops, history, shared list links) goes up to Firestore under a one-off random code,
+   and comes down on the other side. iPhone keeps each web address's storage separate, so this is the bridge. */
+const NEW_HOME = 'https://list-sharing.web.app/';
+const IS_OLD_HOME = /\.github\.io$/.test(location.hostname) || !!window.__TROLLEY_OLD_HOME;
+const formatMove = id => 'MOVE-' + id.match(/.{1,4}/g).join('-');
+function parseMoveCode(raw){
+  const m = String(raw || '').toUpperCase().match(/MOVE[\s-]*((?:[A-Z0-9]{4}[\s-]*){4})/);
+  if (!m) return null;
+  const id = m[1].replace(/[^A-Z0-9]/g, '');
+  return id.length === 16 && [...id].every(c => CODE_ALPHABET.includes(c)) ? id : null;
+}
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('timeout'), { code:'unavailable' })), ms))]);
+const transferRef = id => fb.fs.doc(fb.db, 'transfers', id);
+
+let movedHidden = false;
+function renderMoved(){
+  const el = $('#moved');
+  if (!IS_OLD_HOME || movedHidden || !NEW_HOME) { el.innerHTML = ''; return; }
+  const standalone = isStandalone();
+  el.innerHTML = '<section class="install"><h2>Virtual Trolley has a new home</h2>'
+    + (standalone
+      ? '<p>Move your lists across in about a minute. Everything comes with you, including shared lists.</p>'
+        + '<div class="row-btns"><button type="button" class="btn" data-act="movedLater">Not now</button><button type="button" class="btn primary" data-act="moveStart">Move my lists</button></div>'
+      : `<p>Open <strong>${esc(NEW_HOME.replace(/^https:\/\//, '').replace(/\/$/, ''))}</strong> in Safari and add that to your Home Screen instead.</p>`
+        + `<div class="row-btns"><a class="btn primary" href="${esc(NEW_HOME)}">Go to the new address</a></div>`)
+    + '</section>';
+}
+$('#moved').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'movedLater') { movedHidden = true; renderMoved(); }
+  if (b.dataset.act === 'moveStart') startMove();
+});
+
+function startMove(){
+  if (!sharingConfigured()) { toast("Moving needs sharing set up. Use Back up and Restore instead."); return; }
+  const id = newListId(), code = formatMove(id);
+  const upload = (async () => {
+    await loadFirebase();
+    const payload = JSON.stringify({ app:'trolley', v:1, data:state });
+    await withTimeout(fb.fs.setDoc(transferRef(id), { data:payload, createdAt:Date.now() }), 20000);
+  })();
+  // Copy while the tap still counts as a tap: iPhone only lets a page copy during one.
+  let copied = Promise.resolve(false);
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      const blob = upload.then(() => new Blob([code], { type:'text/plain' }));
+      copied = navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(() => true, () => false);
+    }
+  } catch(e) { copied = Promise.resolve(false); }
+  openSheet('<h2>Getting your lists ready</h2><p class="sub">This takes a few seconds.</p>', { type:'moving' });
+  upload.then(() => copied).then(ok => openMoveReady(code, ok)).catch(e => {
+    openSheet(`<h2>Couldn't move your lists</h2><p class="sub">${esc(fbErrorText(e))}</p>`
+      + '<p class="note">You can also use Settings, Back up now, then Restore on the other side.</p>'
+      + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="moveStart">Try again</button></div>', { type:'movefail' });
+  });
+}
+function openMoveReady(code, copied){
+  const there = IS_OLD_HOME && NEW_HOME;
+  openSheet(
+    `<h2>${copied ? 'Code copied' : 'Your move code'}</h2>`
+    + `<p class="bigcode">${esc(code)}</p>`
+    + '<ol class="steps">'
+    + (there ? `<li>Open <strong>${esc(NEW_HOME.replace(/^https:\/\//, '').replace(/\/$/, ''))}</strong> in Safari and add it to your Home Screen.</li>`
+             : '<li>Open Virtual Trolley on the other phone.</li>')
+    + '<li>Open the new Virtual Trolley and choose <strong>Moving from another phone or the old app</strong>, or Settings, then Bring lists.</li>'
+    + `<li>Tap <strong>Paste</strong>.${copied ? '' : ' Copy the code first with the button below.'}</li></ol>`
+    + '<p class="note">The code works once, for 7 days. Nothing is removed from this phone.</p>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="moveCopy">Copy code</button>'
+    + (there ? `<a class="btn primary" href="${esc(NEW_HOME)}">Open new address</a>` : '') + '</div>',
+    { type:'moveready', code }
+  );
+}
+function openMoveIn(){
+  openSheet(
+    '<h2>Bring your lists</h2><p class="sub">Paste the move code from the old app or the other phone.</p>'
+    + `<div class="join-big"><button type="button" class="btn primary" data-act="movePaste" style="grid-column:1 / -1">${ICON_PASTE}Paste</button></div>`
+    + '<p class="or">or type it</p><form data-form="move" autocomplete="off">'
+    + '<input class="field code" name="code" placeholder="MOVE-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Move code">'
+    + '<p class="note err" hidden></p><div class="sheet-actions"><button type="submit" class="btn">Bring them in</button></div></form>',
+    { type:'movein' }
+  );
+}
+async function pasteMove(){
+  if (!sheetCtx || sheetCtx.type !== 'movein') { openMoveIn(); }
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch(e) { text = ''; }
+  const id = parseMoveCode(text);
+  if (!id) { const inp = sheet.querySelector('input.code'); if (inp) inp.focus(); if (text) moveError('No move code found. They look like MOVE-XXXX-XXXX-XXXX-XXXX.'); else toast('Hold the box below and choose Paste'); return; }
+  importMove(id);
+}
+function moveError(msg){
+  const p = sheet.querySelector('form[data-form="move"] .err');
+  if (p) { p.textContent = msg; p.hidden = false; } else toast(msg);
+}
+async function importMove(id){
+  try {
+    await loadFirebase();
+    const snap = await withTimeout(fb.fs.getDocFromServer(transferRef(id)), 20000);
+    if (!snap.exists()) throw new Error('That move code has already been used or has expired.');
+    const v = snap.data() || {};
+    if (Date.now() - (v.createdAt || 0) > 7 * DAY) throw new Error('That move code has expired. Make a new one.');
+    let obj = null; try { obj = JSON.parse(v.data); } catch(e) {}
+    const data = obj && obj.data;
+    if (!isValid(data)) throw new Error("That move code didn't contain any lists.");
+    data.welcomed = true;
+    const empty = !state.items.length && !state.shops.length;
+    if (empty) {
+      snapshot(); state = normalise(data);
+      save(); resetSharing(); render(); closeSheet();
+      toast('Your lists have moved in', true);
+      finishMove(id);
+    } else {
+      openSheet('<h2>Replace what is on this phone?</h2>'
+        + `<p class="note">The moved lists have ${data.items.length} items across ${data.shops.length} shops. This phone has ${state.items.length} items, which will be replaced. You can undo straight after.</p>`
+        + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="button" class="btn primary" data-act="confirmRestore">Replace</button></div>',
+        { type:'restore', data, moved:true, moveId:id });
+    }
+  } catch(e) { moveError(e.message && !e.code ? e.message : fbErrorText(e)); }
+}
+function finishMove(id){ if (fb) fb.fs.deleteDoc(transferRef(id)).catch(() => {}); }
+
+/* ---------- First run ---------- */
+function maybeWelcome(){
+  if (state.welcomed) return;
+  const empty = !state.items.length && !state.shops.length && !Object.keys(state.history).length;
+  if (!empty) { state.welcomed = true; save(); return; }
+  if ((isIOS && !isStandalone()) || IS_OLD_HOME || sheetCtx) return; // Safari shows the install steps instead
+  state.welcomed = true; save();
+  const can = sharingConfigured();
+  openSheet(
+    '<h2>Welcome to Virtual Trolley</h2><p class="sub">A shopping list with a tab for each shop. It works with no signal, and lists can be shared with family.</p>'
+    + '<div class="menu">'
+    + `<button type="button" class="menu-item" data-act="welcomeShops"><span class="mi">${ICON_STORE}</span><span><strong>Pick your shops</strong><small>Each gets its own tab, sorted by aisle</small></span></button>`
+    + (can ? `<button type="button" class="menu-item" data-act="menuJoin"><span class="mi">${ICON_JOIN}</span><span><strong>Join a shared list</strong><small>Someone has a list to share with you</small></span></button>`
+           + `<button type="button" class="menu-item" data-act="movePaste"><span class="mi">${ICON_PASTE}</span><span><strong>Moving from another phone or the old app</strong><small>Bring everything across with a move code</small></span></button>` : '')
+    + '</div><div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Just start a list</button></div>',
+    { type:'welcome' }
+  );
+}
+function openShopPicker(){
+  const have = new Set(state.shops.map(s => key(s.name)));
+  openSheet(
+    '<h2>Pick your shops</h2><p class="sub">Tap the ones you use. You can add others with + Add at any time.</p>'
+    + '<div class="chips" style="margin-top:16px">'
+    + SHOP_SUGGESTIONS.filter(n => !have.has(key(n))).map(n => `<button type="button" class="chip" data-act="pickShop" data-v="${esc(n)}" aria-pressed="false">${esc(n)}</button>`).join('')
+    + '</div><div class="sheet-actions"><button type="button" class="btn primary" data-act="pickDone">Done</button></div>',
+    { type:'picker' }
+  );
+}
 /* ---------- Start ---------- */
 render();
 (function handleJoinLink(){
@@ -2266,6 +2729,7 @@ render();
   if (isStandalone()) openJoinShared(listId); else openSafariJoin(listId);
 })();
 startSharing();
+setTimeout(maybeWelcome, 300);
 if (loadWarning) toast(loadWarning);
 </script>
 </body>

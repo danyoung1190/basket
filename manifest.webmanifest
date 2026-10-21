@@ -1,7 +1,7 @@
 {
-  "name": "Basket",
-  "short_name": "Basket",
-  "description": "A simple, private shopping list with a list per shop.",
+  "name": "Virtual Trolley",
+  "short_name": "Trolley",
+  "description": "A shopping list with a tab for each shop. Works with no signal, and lists can be shared.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

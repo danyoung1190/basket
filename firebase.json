@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "site": "list-sharing",
+    "public": ".",
+    "ignore": ["firebase.json", "README.md", "firestore.rules", ".github/**", "**/.*", "**/node_modules/**"],
+    "headers": [
+      { "source": "**/*.@(html|js|webmanifest)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  }
+}
