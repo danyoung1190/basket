@@ -1,6 +1,6 @@
 // Trolley service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'trolley-v11';
+const CACHE = 'trolley-v12';
 const ASSETS = [
   './',
   './index.html',

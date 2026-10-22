@@ -137,7 +137,7 @@ main{max-width:640px; margin:0 auto}
 .item.done .hint{display:none}
 .grip{
   flex:none; width:50px; align-self:stretch; display:grid; place-items:center;
-  color:var(--muted); opacity:.55; touch-action:none; cursor:grab;
+  color:var(--muted); opacity:.55; touch-action:pan-y; cursor:grab;
 }
 .grip svg{width:20px; height:20px}
 .done-list .row.item{padding-right:16px}
@@ -236,12 +236,12 @@ body.is-dragging{cursor:grabbing}
 #layer{overflow:hidden}
 /* Trolley: a whole trolley parked across the bottom of the screen, seen from the side and a little above.
    Ticked items drop over the rail into it and stand inside. Swipe up (or tap) to look inside. */
-#dock{position:absolute; left:0; right:0; bottom:0; z-index:35; height:calc(max(env(safe-area-inset-bottom), 6px) + 158px);
+#dock{position:absolute; left:0; right:0; bottom:0; z-index:35; height:calc(max(env(safe-area-inset-bottom), 6px) + 108px);
   pointer-events:none !important; transition:transform .25s ease, opacity .2s ease;
   background:linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent) 0, color-mix(in srgb, var(--bg) 92%, transparent) 22%, var(--bg) 34%)}
-#dock .hit{position:absolute; left:0; right:0; top:30px; bottom:0; pointer-events:auto; touch-action:none; cursor:pointer;
+#dock .hit{position:absolute; left:0; right:0; top:14px; bottom:0; pointer-events:auto; touch-action:none; cursor:pointer;
   user-select:none; -webkit-user-select:none}
-#dock svg.trolley{position:absolute; left:0; bottom:max(env(safe-area-inset-bottom), 6px); width:100%; height:150px; overflow:visible; pointer-events:none}
+#dock svg.trolley{position:absolute; left:0; bottom:max(env(safe-area-inset-bottom), 6px); width:100%; height:96px; overflow:visible; pointer-events:none}
 #dock .chip{position:absolute; right:14px; top:0; height:28px; padding:0 12px 0 10px; border-radius:14px; background:var(--accent); color:#fff;
   display:flex; align-items:center; gap:4px; font:600 13px/1 var(--ui); box-shadow:0 4px 12px rgba(0,0,0,.18); pointer-events:none; white-space:nowrap}
 #dock .chip svg{width:14px; height:14px}
@@ -250,8 +250,8 @@ body.is-dragging{cursor:grabbing}
 .trolley .wheel, .trolley .good{transform-box:fill-box; transform-origin:50% 50%}
 .trolley .good{transform-origin:50% 100%}
 body.typing #dock, body.sheet-open #dock{transform:translateY(110%); opacity:0}
-#layer.with-trolley #toast{bottom:calc(max(env(safe-area-inset-bottom), 6px) + 166px)}
-body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 190px)}
+#layer.with-trolley #toast{bottom:calc(max(env(safe-area-inset-bottom), 6px) + 116px)}
+body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 136px)}
 .trolley-list .row.item{padding-right:16px}
 :root{--chrome-hi:#EEF2F4; --chrome-mid:#A3ADB3; --chrome-lo:#6F7A80; --wire:#9AA4AA; --wire-back:#C9D0D4; --tyre:#2E3438}
 @media (prefers-color-scheme:dark){ :root{--chrome-hi:#DDE3E6; --chrome-mid:#8E989E; --chrome-lo:#5E686E; --wire:#7F898F; --wire-back:#3E464B; --tyre:#4A535A} }
@@ -299,6 +299,9 @@ body.with-dock{padding-bottom:calc(env(safe-area-inset-bottom) + 190px)}
 .destbtn.usual{box-shadow:inset 0 0 0 2px var(--c)}
 .destbtn.ghost, .chip.ghost{background:none; box-shadow:inset 0 0 0 1.5px var(--line); color:var(--muted)}
 .chips{display:flex; flex-wrap:wrap; gap:8px}
+.chips.scroll{flex-wrap:nowrap; overflow-x:auto; padding-bottom:10px; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+.chips.scroll::-webkit-scrollbar{display:none}
+.chips.scroll .chip{flex:none}
 .chip{height:38px; padding:0 14px; border-radius:19px; border:0; background:var(--chip); font-size:15px; font-weight:500; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .chip[aria-pressed="true"]{background:var(--ink); color:var(--surface)}
 .sheet-actions{display:flex; gap:8px; margin-top:24px}
@@ -395,7 +398,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.1.2';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -768,7 +771,7 @@ function dueItems(shopId){
     .map(([k, h]) => ({ h, st:buyStats(h) }))
     .filter(x => x.st.every && now - x.st.last >= x.st.every * 0.85)
     .sort((a, b) => ((now - b.st.last) / b.st.every) - ((now - a.st.last) / a.st.every))
-    .slice(0, 12)
+    .slice(0, 6)
     .map(x => x.h);
 }
 
@@ -1177,7 +1180,7 @@ function renderSuggest(){
     const rows = mine.concat(cat).sort((a, b) =>
       (b.s - a.s) || ((b.h ? local(b.h) : 0) - (a.h ? local(a.h) : 0)) ||
       ((b.h ? b.h.count : 0) - (a.h ? a.h.count : 0)) || (a.f.length - b.f.length)
-    ).slice(0, 7);
+    ).slice(0, 6);
     html = rows.map(r => {
       if (r.h) {
         const us = !shop && r.h.shopId ? shopById(r.h.shopId) : null;
@@ -1190,11 +1193,11 @@ function renderSuggest(){
   } else {
     const picks = hist
       .sort((a, b) => (local(b[1]) - local(a[1])) || (b[1].count - a[1].count) || ((b[1].lastAt || 0) - (a[1].lastAt || 0)))
-      .slice(0, 12).map(([, h]) => h.name);
+      .slice(0, 8).map(([, h]) => h.name);
     const have = new Set(picks.map(fold));
-    STAPLES.forEach(n => { if (picks.length < 12 && !have.has(fold(n)) && !onTab.has(fold(n))) { picks.push(n); have.add(fold(n)); } });
+    STAPLES.forEach(n => { if (picks.length < 8 && !have.has(fold(n)) && !onTab.has(fold(n))) { picks.push(n); have.add(fold(n)); } });
     if (picks.length) {
-      html = '<p class="sug-label">Quick add</p><div class="chips">'
+      html = '<p class="sug-label">Quick add</p><div class="chips scroll">'
         + picks.map(n => `<button type="button" class="chip" data-add="${esc(n)}">${esc(n)}${qtyLabel(usualQty(n) || 1)}</button>`).join('')
         + '</div>';
     }
@@ -1297,11 +1300,22 @@ tabsEl.addEventListener('click', e => {
 });
 
 /* ---------- Drag to reorder (handle only) ---------- */
-let drag = null;
+let drag = null, armDrag = null;
+// A thumb landing on the handle while scrolling must not move the item: the handle needs a short, still hold first.
 listEl.addEventListener('pointerdown', e => {
-  const grip = e.target.closest('.grip'); if (!grip || drag) return;
+  const grip = e.target.closest('.grip'); if (!grip || drag || armDrag) return;
   const row = grip.closest('.row'); if (!row) return;
-  e.preventDefault();
+  armDrag = { grip, row, x:e.clientX, y:e.clientY, pid:e.pointerId,
+    timer:setTimeout(() => { const a = armDrag; armDrag = null; if (a) beginDrag(a.grip, a.row, a.y, a.pid); }, 180) };
+});
+const disarm = () => { if (armDrag) { clearTimeout(armDrag.timer); armDrag = null; } };
+listEl.addEventListener('pointermove', e => { if (armDrag && Math.hypot(e.clientX - armDrag.x, e.clientY - armDrag.y) > 6) disarm(); }, true);
+listEl.addEventListener('pointerup', disarm, true);
+listEl.addEventListener('pointercancel', disarm, true);
+// Once a drag is on, stop Safari from turning the movement into a scroll.
+listEl.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive:false });
+function beginDrag(grip, row, clientY, pointerId){
+  if (navigator.vibrate) { try { navigator.vibrate(8); } catch(_) {} }
   // Show empty sections as drop targets. That pushes rows down, so offset the start
   // point to keep the dragged row under her finger.
   const before = row.getBoundingClientRect().top;
@@ -1311,12 +1325,12 @@ listEl.addEventListener('pointerdown', e => {
   const idx = rows.indexOf(row);
   const sy = window.scrollY;
   const m = rows.map(r => { const b = r.getBoundingClientRect(); return { top:b.top + sy, h:b.height }; });
-  drag = { grip, row, rows, idx, m, startY:e.clientY + sy + shiftY, clientY:e.clientY, target:idx, pid:e.pointerId, raf:0 };
-  try { grip.setPointerCapture(e.pointerId); } catch(_) {}
+  drag = { grip, row, rows, idx, m, startY:clientY + sy + shiftY, clientY, target:idx, pid:pointerId, raf:0 };
+  try { grip.setPointerCapture(pointerId); } catch(_) {}
   row.classList.add('dragging');
   document.body.classList.add('is-dragging');
   drag.raf = requestAnimationFrame(autoScroll);
-});
+}
 listEl.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.pid) return;
   drag.clientY = e.clientY;
@@ -2556,11 +2570,16 @@ const GOOD_COLOURS = { 'Fruit & veg':'#6DBE5A', 'Bakery':'#D9A05B', 'Meat & poul
   'Health & medicine':'#5CC3B0', 'Baby':'#FFD38A', 'Pets':'#9C7F5F' };
 const trolleyItems = () => tabItems().filter(i => i.done && !flying.has(i.id)).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
 // ----- Trolley drawing (SVG, redrawn to the real screen width) -----
-const TH = 150;               // drawing height
+const TH = 150;               // drawing height (drawn at 64%: 96px on screen)
+const TSCALE = 0.64;
 const FLOOR = 116;            // basket floor (where packages stand)
 const RIM = 54;               // front top rail
+// The trolley keeps its proportions: at most 460 drawing units wide, centred in the view.
 function trolleyGeom(W){
-  return { W, backL:62, backR:W - 22, frontL:70, frontR:W - 30, botL:86, botR:W - 58, inL:92, inR:W - 64 };
+  const gw = Math.min(W, 460), ox = Math.round((W - gw) / 2);
+  const g = { W, gw, ox, backL:62, backR:gw - 22, frontL:70, frontR:gw - 30, botL:86, botR:gw - 58, inL:92, inR:gw - 64 };
+  ['backL','backR','frontL','frontR','botL','botR','inL','inR'].forEach(k => g[k] += ox);
+  return g;
 }
 // Where each package stands: spread along the basket floor; a second row stands behind, half a step along.
 function goodSlot(i, W){
@@ -2573,6 +2592,36 @@ const SHAPES = { 'Fruit & veg':'fruit', 'Bakery':'bread', 'Meat & poultry':'tray
   'Cheese':'block', 'Chilled & deli':'tub', 'Frozen':'box', 'Herbs & spices':'jar', 'Pasta, rice & grains':'bag', 'Tins & jars':'tin',
   'Sauces & condiments':'bottle', 'Baking':'bag', 'Breakfast & spreads':'box', 'Tea & coffee':'box', 'World foods':'jar', 'Snacks & sweets':'crisps',
   'Soft drinks':'bottle', 'Beer, wine & spirits':'wine', 'Household':'spray', 'Toiletries & beauty':'pump', 'Health & medicine':'box', 'Baby':'tub', 'Pets':'bag' };
+// Fruit and veg drawn as what they are, where the name says so.
+function produceSvg(name, x, y, s, edge){
+  const f = fold(name);
+  const has = (...w) => w.some(k => f.includes(k));
+  if (has('banana')) return `<g transform="rotate(-12 ${x} ${y})"><path d="M${x - 22} ${y - 14} q22 24 44 -2 q-2 8 -8 12 q-20 14 -40 -2 Z" fill="#F2D04B" stroke="${edge}"/>`
+    + `<path d="M${x - 22} ${y - 14} q22 24 44 -2 q-2 8 -8 12 q-20 14 -40 -2 Z" fill="none" stroke="#C9A62B" stroke-width="1.2" transform="translate(0 4)"/>`
+    + `<path d="M${x - 22} ${y - 14} l-4 -5" stroke="#6B4A1E" stroke-width="3" stroke-linecap="round"/><path d="M${x + 21} ${y - 17} l3 -2" stroke="#6B4A1E" stroke-width="2.5" stroke-linecap="round"/></g>`;
+  if (has('carrot')) return `<g transform="rotate(${22 + s % 10} ${x} ${y})"><path d="M${x - 7} ${y - 44} h14 l-7 44 Z" fill="#F2893B" stroke="${edge}"/>`
+    + `<path d="M${x - 4} ${y - 30} h6 M${x - 3} ${y - 18} h4" stroke="rgba(0,0,0,.14)" stroke-width="1.5"/>`
+    + `<path d="M${x} ${y - 44} l-8 -12 M${x} ${y - 44} l0 -14 M${x} ${y - 44} l8 -12" stroke="#4EA64B" stroke-width="3" stroke-linecap="round"/></g>`;
+  if (has('broccoli')) return `<path d="M${x - 4} ${y} V${y - 18} h8 V${y} Z" fill="#B9D27A" stroke="${edge}"/>`
+    + [[-11, -22, 9], [0, -30, 11], [11, -22, 9], [-5, -16, 7], [6, -16, 7]].map(([ox, oy, r]) => `<circle cx="${x + ox}" cy="${y + oy}" r="${r}" fill="#3E8E3E" stroke="${edge}"/>`).join('');
+  if (has('lettuce', 'cabbage', 'sprout')) return `<circle cx="${x}" cy="${y - 15}" r="15" fill="#8FC76A" stroke="${edge}"/><path d="M${x - 11} ${y - 14} q6 -12 14 -8 M${x - 4} ${y - 24} q8 2 10 10" stroke="rgba(255,255,255,.4)" stroke-width="2" fill="none"/>`;
+  if (has('grape')) { const c = has('red grape', 'black grape') ? '#7B3F8C' : '#9BCB5A'; return [[0, -30], [-8, -22], [8, -22], [0, -22], [-5, -13], [5, -13], [0, -5]].map(([ox, oy]) => `<circle cx="${x + ox}" cy="${y + oy}" r="5.5" fill="${c}" stroke="${edge}"/>`).join('') + `<path d="M${x} ${y - 35} v-6" stroke="#6B4A1E" stroke-width="2"/>`; }
+  if (has('lemon', 'lime')) { const c = has('lime') ? '#8CC63F' : '#F6D33C'; return `<ellipse cx="${x}" cy="${y - 11}" rx="14" ry="10" fill="${c}" stroke="${edge}"/><circle cx="${x + 13}" cy="${y - 11}" r="2.5" fill="${c}" stroke="${edge}"/>`; }
+  if (has('orange', 'satsuma', 'clementine', 'mandarin', 'tangerine', 'easy peeler')) return `<circle cx="${x}" cy="${y - 12}" r="12" fill="#F2A93B" stroke="${edge}"/><path d="M${x - 3} ${y - 24} q3 -4 6 0" stroke="#4EA64B" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
+  if (has('apple')) { const c = has('granny', 'green') ? '#8CC63F' : has('golden') ? '#E8D04A' : '#D6544F'; return `<path d="M${x - 12} ${y - 10} q0 -14 10 -13 q2 1 2 1 q2 0 2 -1 q10 -1 10 13 q0 10 -12 10 q-12 0 -12 -10 Z" fill="${c}" stroke="${edge}"/><path d="M${x} ${y - 22} v-6" stroke="#5B3A1E" stroke-width="2"/><path d="M${x + 1} ${y - 26} q6 -3 7 2 q-5 2 -7 -2 Z" fill="#4EA64B"/>`; }
+  if (has('strawberr')) return `<path d="M${x - 10} ${y - 22} q10 -6 20 0 q0 14 -10 22 q-10 -8 -10 -22 Z" fill="#D6334A" stroke="${edge}"/><path d="M${x - 8} ${y - 24} l4 -4 l4 4 l4 -4 l4 4" stroke="#4EA64B" stroke-width="2.5" fill="none"/>`;
+  if (has('tomato')) return `<circle cx="${x}" cy="${y - 11}" r="11" fill="#E0432E" stroke="${edge}"/><path d="M${x - 6} ${y - 21} l6 2 l6 -2 M${x} ${y - 19} v-4" stroke="#4EA64B" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  if (has('potato')) return `<ellipse cx="${x}" cy="${y - 10}" rx="15" ry="10" fill="#C9A66B" stroke="${edge}"/><circle cx="${x - 6}" cy="${y - 12}" r="1.5" fill="rgba(0,0,0,.2)"/><circle cx="${x + 5}" cy="${y - 7}" r="1.5" fill="rgba(0,0,0,.2)"/>`;
+  if (has('onion')) return `<circle cx="${x}" cy="${y - 11}" r="11" fill="#E3C27E" stroke="${edge}"/><path d="M${x} ${y - 22} q-2 -6 0 -9 q2 3 0 9" fill="#B89A5E"/><path d="M${x - 4} ${y - 18} q4 6 0 12 M${x + 4} ${y - 18} q-4 6 0 12" stroke="rgba(0,0,0,.12)" stroke-width="1.5" fill="none"/>`;
+  if (has('pepper')) return `<path d="M${x - 11} ${y - 8} q0 -18 11 -18 q11 0 11 18 q0 8 -11 8 q-11 0 -11 -8 Z" fill="${['#E0432E','#F2A93B','#4EA64B'][s % 3]}" stroke="${edge}"/><path d="M${x} ${y - 26} v-6" stroke="#4EA64B" stroke-width="2.5" stroke-linecap="round"/>`;
+  if (has('cucumber', 'courgette')) return `<rect x="${x - 6}" y="${y - 50}" width="12" height="50" rx="6" fill="#4C9A3C" stroke="${edge}" transform="rotate(${8 + s % 8} ${x} ${y})"/>`;
+  if (has('mushroom')) return `<rect x="${x - 4}" y="${y - 12}" width="8" height="12" rx="2" fill="#EFE7D8" stroke="${edge}"/><path d="M${x - 13} ${y - 11} q13 -22 26 0 Z" fill="#C8B49A" stroke="${edge}"/>`;
+  if (has('avocado')) return `<path d="M${x - 9} ${y - 10} q0 -22 9 -22 q9 0 9 22 q0 10 -9 10 q-9 0 -9 -10 Z" fill="#3E6B2E" stroke="${edge}"/>`;
+  if (has('melon', 'pineapple', 'squash', 'pumpkin', 'cauliflower')) return `<ellipse cx="${x}" cy="${y - 16}" rx="16" ry="16" fill="${has('pineapple') ? '#E6B64A' : has('pumpkin','squash') ? '#F2893B' : has('cauliflower') ? '#F1EEE3' : '#8CC63F'}" stroke="${edge}"/>`;
+  const r = 9 + s % 4, c2 = ['#6DBE5A','#D6544F','#F2A93B','#F2D04B'][s % 4];
+  return `<circle cx="${x - 5}" cy="${y - r}" r="${r}" fill="${c2}" stroke="${edge}"/><circle cx="${x + 7}" cy="${y - r + 2}" r="${r - 2}" fill="${GOOD_COLOURS['Fruit & veg'] || '#6DBE5A'}" stroke="${edge}"/>`
+    + `<path d="M${x - 5} ${y - 2 * r} q2 -5 5 -6" stroke="#5B3A1E" stroke-width="2" fill="none"/>`;
+}
 const seedOf = id => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 function packageSvg(it, x, newId){
   const cat = categoryFor(it.name), shape = SHAPES[cat] || 'box', s = seedOf(it.id);
@@ -2580,9 +2629,7 @@ function packageSvg(it, x, newId){
   const lbl = 'rgba(255,255,255,.72)', edge = 'rgba(0,0,0,.16)', shade = 'rgba(0,0,0,.10)';
   let d = '';
   switch (shape) {
-    case 'fruit': { const r = 9 + s % 4; const c2 = ['#6DBE5A','#D6544F','#F2A93B','#F2D04B'][s % 4];
-      d = `<circle cx="${x - 5}" cy="${y - r}" r="${r}" fill="${c2}" stroke="${edge}"/><circle cx="${x + 7}" cy="${y - r + 2}" r="${r - 2}" fill="${col}" stroke="${edge}"/>`
-        + `<path d="M${x - 5} ${y - 2 * r} q2 -5 5 -6" stroke="#5B3A1E" stroke-width="2" fill="none"/>`; break; }
+    case 'fruit': d = produceSvg(it.name, x, y, s, edge); break;
     case 'bread':
       if (s % 2) { d = `<rect x="${x - 7}" y="${y - 92}" width="14" height="92" rx="7" fill="${col}" stroke="${edge}" transform="rotate(${10 + s % 12} ${x} ${y})"/>`
         + `<path d="M${x - 3} ${y - 80} l6 -4 M${x - 3} ${y - 62} l6 -4 M${x - 3} ${y - 44} l6 -4" stroke="rgba(255,255,255,.45)" stroke-width="2" transform="rotate(${10 + s % 12} ${x} ${y})"/>`; }
@@ -2628,7 +2675,7 @@ function wiresSvg(g, back){
 }
 function drawTrolley(newId){
   const svg = dock.querySelector('svg.trolley');
-  const W = Math.max(320, Math.round(dock.getBoundingClientRect().width || window.innerWidth));
+  const W = Math.max(320, Math.round((dock.getBoundingClientRect().width || window.innerWidth) / TSCALE));
   const g = trolleyGeom(W);
   const items = trolleyItems();
   const placed = items.map((it, i) => ({ it, slot:goodSlot(i, W) }));
@@ -2640,7 +2687,7 @@ function drawTrolley(newId){
   svg.setAttribute('viewBox', `0 0 ${W} ${TH}`);
   svg.innerHTML = `
     <defs><linearGradient id="chr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--chrome-hi)"/><stop offset=".5" stop-color="var(--chrome-mid)"/><stop offset="1" stop-color="var(--chrome-lo)"/></linearGradient></defs>
-    <ellipse cx="${W / 2}" cy="146" rx="${W * .42}" ry="5" fill="rgba(0,0,0,.12)"/>
+    <ellipse cx="${g.ox + g.gw / 2}" cy="146" rx="${g.gw * .42}" ry="5" fill="rgba(0,0,0,.12)"/>
     <g class="roll">
       ${wheel(g.botL + 26, 140, 6, true)}${wheel(g.botR + 6, 140, 6, true)}
       <path d="M${g.backL + 6} ${RIM - 10} H${g.backR - 6}" stroke="var(--wire-back)" stroke-width="3" stroke-linecap="round"/>
