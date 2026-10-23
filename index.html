@@ -324,6 +324,15 @@ label.btn{cursor:pointer}
 .swatch{width:38px; height:38px; border-radius:50%; border:0; background:var(--c)}
 .swatch[aria-pressed="true"]{box-shadow:0 0 0 3px var(--surface), 0 0 0 5px var(--c)}
 .secrow{display:flex; align-items:center; gap:2px; min-height:50px; border-bottom:1px solid var(--line)}
+/* Sections: slide a row left to show Delete, then tap Delete. Two deliberate moves, so a stray tap can't remove one. */
+.secrow.swipe{position:relative; overflow:hidden; padding:0; display:block}
+.secrow.swipe .slide{position:relative; z-index:1; display:flex; align-items:center; gap:2px; min-height:50px; background:var(--surface);
+  touch-action:pan-y; transition:transform .2s ease}
+.secrow.swipe.dragging .slide{transition:none}
+.secrow.swipe .swipe-del{position:absolute; right:0; top:0; bottom:0; width:92px; border:0; background:var(--danger); color:#fff; font:600 15px var(--ui)}
+@media (prefers-color-scheme:dark){ .secrow.swipe .swipe-del{color:#1C2320} }
+.secrow.swipe .grab{flex:none; width:6px; height:22px; margin-right:6px; border-radius:3px; background:var(--line)}
+.sec-hint{margin:6px 0 4px; font-size:13px; color:var(--muted)}
 .secrow .nm{flex:1; min-width:0; overflow-wrap:anywhere; padding:8px 0}
 .secrow .nm small{display:block; color:var(--muted); font-size:13px}
 .mini{flex:none; width:40px; height:40px; border:0; border-radius:12px; background:none; color:var(--muted); display:grid; place-items:center}
@@ -398,7 +407,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.1.3';
+const APP_VERSION = '2.2.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1434,6 +1443,31 @@ document.addEventListener('click', e => {
   }
 });
 $('#btnShare').addEventListener('click', shareList);
+function deleteSection(shop, sec){
+  snapshot();
+  shop.sections = shop.sections.filter(s => s.id !== sec.id);
+  itemsIn(shop.id).forEach(i => { if (i.sectionId === sec.id) i.sectionId = null; });
+  const si = stdIndexOf(sec); if (si >= 0) shop.skipAisles = [...new Set([...(shop.skipAisles || []), STANDARD_SECTIONS[si]])];
+  save(); render(); openShopSheet(shop.id);
+  toast(`Deleted ${sec.name}`, true);
+}
+// Turn a private shop into a shared list in place: same tab, same items, same aisles.
+async function makeShared(shop, btn){
+  if (isShared(shop)) { openShowCode(shop.id); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sharing...'; }
+  try {
+    await loadFirebase();
+    const listId = newListId();
+    await withTimeout(fb.fs.setDoc(listRef(listId), Object.assign(metaOf(shop), { createdAt:Date.now(), updatedAt:Date.now() })), 12000);
+    shop.shared = { fb:true, listId, joinedAt:Date.now() };
+    subscribe(shop);          // its first snapshot is empty, so the local items are kept and sent up
+    save(); render();
+    openShowCode(shop.id);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Share this list live'; }
+    toast(fbErrorText(e));
+  }
+}
 $('#btnShop').addEventListener('click', () => { const s = currentShop(); if (s) openShopSheet(s.id); });
 $('#btnSettings').addEventListener('click', openSettings);
 
@@ -1454,6 +1488,16 @@ function shopLines(shop, items){
   return lines;
 }
 function shareList(){
+  const shop = currentShop();
+  if (shop && !isShared(shop) && sharingConfigured()) {
+    openSheet(`<h2>Share ${esc(shop.name)}</h2><p class="sub">Share it live and both phones stay in step, or send a copy as a message.</p>`
+      + '<button type="button" class="btn primary wide" data-act="shareLive">Share this list live</button>'
+      + '<button type="button" class="btn wide" data-act="shareText">Send as a message</button>', { type:'shareChoice' });
+    return;
+  }
+  shareListText();
+}
+function shareListText(){
   const shop = currentShop();
   let lines = [];
   if (shop) {
@@ -1614,8 +1658,9 @@ function openItemSheet(id){
 }
 
 let promptCb = null;
-function openPrompt({ title, sub, placeholder, value, suggestions, button, onSave }){
-  promptCb = onSave;
+let promptDel = null;
+function openPrompt({ title, sub, placeholder, value, suggestions, button, onSave, onDelete }){
+  promptCb = onSave; promptDel = onDelete || null;
   const sug = (suggestions || []).length
     ? '<h3 class="sh-label">Suggestions</h3><div class="chips">'
       + suggestions.map(s => `<button type="button" class="chip" data-act="pickSuggestion" data-v="${esc(s)}">${esc(s)}</button>`).join('') + '</div>'
@@ -1623,7 +1668,8 @@ function openPrompt({ title, sub, placeholder, value, suggestions, button, onSav
   openSheet(
     `<h2>${esc(title)}</h2>${sub ? `<p class="sub">${esc(sub)}</p>` : ''}`
     + `<form class="prompt-form" data-form="prompt" autocomplete="off"><input class="field" type="text" maxlength="80" enterkeyhint="done" autocapitalize="sentences" placeholder="${esc(placeholder || '')}" value="${esc(value || '')}" aria-label="${esc(title)}">`
-    + `<button type="submit" class="btn primary">${esc(button || 'Save')}</button></form>` + sug,
+    + `<button type="submit" class="btn primary">${esc(button || 'Save')}</button></form>` + sug
+    + (onDelete ? '<button type="button" class="btn danger wide" style="margin-top:24px" data-act="promptDelete">Delete section</button>' : ''),
     { type:'prompt' }
   );
 }
@@ -1722,18 +1768,21 @@ function openShopSheet(id){
   const sw = PALETTE.map(c => `<button type="button" class="swatch" data-act="setColor" data-color="${c}" style="--c:${c}" aria-pressed="${c === s.color}" aria-label="Use this colour"></button>`).join('');
   const n = s.sections.length;
   const secs = n
-    ? s.sections.map((sec, i) => `<div class="secrow"><span class="nm">${esc(sec.name)}</span>`
+    ? '<p class="sec-hint">Slide a section to the left to delete it.</p>'
+      + s.sections.map((sec, i) => `<div class="secrow swipe" data-sec="${esc(sec.id)}">`
+        + `<button type="button" class="swipe-del" data-act="secDelete" data-sec="${esc(sec.id)}" tabindex="-1">Delete</button>`
+        + `<div class="slide"><span class="grab" aria-hidden="true"></span><span class="nm">${esc(sec.name)}</span>`
         + `<button type="button" class="mini" data-act="secUp" data-sec="${esc(sec.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(sec.name)} up">${ICON_UP}</button>`
         + `<button type="button" class="mini" data-act="secDown" data-sec="${esc(sec.id)}" ${i === n - 1 ? 'disabled' : ''} aria-label="Move ${esc(sec.name)} down">${ICON_DOWN}</button>`
-        + `<button type="button" class="mini" data-act="secRename" data-sec="${esc(sec.id)}" aria-label="Rename ${esc(sec.name)}">${ICON_PEN}</button>`
-        + `<button type="button" class="mini" data-act="secDelete" data-sec="${esc(sec.id)}" aria-label="Delete ${esc(sec.name)}">${ICON_X}</button></div>`).join('')
+        + `<button type="button" class="mini" data-act="secRename" data-sec="${esc(sec.id)}" aria-label="Rename ${esc(sec.name)}">${ICON_PEN}</button></div></div>`).join('')
     : '<p class="note">Sections group items by aisle, in the order you walk round the shop. Items file themselves into the right one.</p>'
       + '<button type="button" class="btn primary wide" data-act="addStandard">Add standard sections</button>';
   const shared = isShared(s);
   openSheet(
     `<h2>${esc(s.name)}</h2><p class="sub">${shared ? 'Shared list. Changes here show on every phone that has joined.' : 'Shop settings'}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="renameShop">Rename</button>'
-    + (shared ? '<button type="button" class="btn primary" data-act="showCode">Share code</button>' : '') + '</div>'
+    + (shared ? '<button type="button" class="btn primary" data-act="showCode">Share code</button>'
+              : (sharingConfigured() ? '<button type="button" class="btn primary" data-act="makeShared">Share this list live</button>' : '')) + '</div>'
     + `<h3 class="sh-label">Colour</h3><div class="swatches">${sw}</div>`
     + `<h3 class="sh-label">Sections, in walking order</h3>${secs}`
     + '<button type="button" class="btn wide" data-act="addSection">+ Add section</button>'
@@ -1873,12 +1922,17 @@ sheet.addEventListener('click', e => {
     }
     case 'secRename': {
       const sec = shop && sectionOf(shop, b.dataset.sec);
-      if (sec) openPrompt({ title:'Rename section', value:sec.name, onSave: v => {
+      if (sec) openPrompt({ title:'Rename section', value:sec.name, onDelete: () => deleteSection(shop, sec), onSave: v => {
         snapshot(); sec.name = v; save(); render(); openShopSheet(shop.id);
       }});
       break;
     }
     case 'secDelete': {
+      const sec = shop && sectionOf(shop, b.dataset.sec);
+      if (sec) deleteSection(shop, sec);
+      break;
+    }
+    case 'secDeleteOld': {
       const sec = shop && sectionOf(shop, b.dataset.sec);
       if (!sec) break;
       snapshot();
@@ -1920,6 +1974,14 @@ sheet.addEventListener('click', e => {
     case 'createStart': openCreateShared(); break;
     case 'joinStart': openJoinShared(''); break;
     case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
+    case 'makeShared': if (shop) makeShared(shop, b); break;
+    case 'promptDelete':
+      if (!promptDel) break;
+      if (b.dataset.armed) { const f = promptDel; promptDel = null; f(); }
+      else { b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'Tap again to delete'; }
+      break;
+    case 'shareLive': { const sh = currentShop(); if (sh) makeShared(sh, b); break; }
+    case 'shareText': closeSheet(); shareListText(); break;
     case 'pasteCode': pasteAndJoin(); break;
     case 'scanCode': startScan(); break;
     case 'scanStop': openJoinShared(''); break;
@@ -2204,13 +2266,15 @@ function subscribe(shop){
       if (local) { state.removed.unshift(Object.assign({}, local, { removedAt:Date.now() })); if (state.removed.length > MAX_REMOVED) state.removed.length = MAX_REMOVED; }
     });
     // Before the first snapshot has landed, local edits made offline since the last run are kept and sent.
+    // Only what the snapshot holds counts as known; local-only items stay unknown so noteSharedChanges sends them.
+    const known = new Map([...incoming.entries()].map(([k, v]) => [k, itemSig(v)]));
     let firstLoad = false;
     if (!L.ready) {
       L.ready = true; firstLoad = true;
       itemsIn(s.id).forEach(i => { if (!incoming.has(i.id)) incoming.set(i.id, i); });
     }
     state.items = state.items.filter(i => i.shopId !== s.id).concat([...incoming.values()]);
-    L.known = new Map([...incoming.entries()].map(([k, v]) => [k, itemSig(v)]));
+    L.known = known;
     healAisles(s);
     if (firstLoad && !snap.metadata.fromCache) {
       state.aislesFiled = state.aislesFiled || [];
@@ -2589,7 +2653,7 @@ function goodSlot(i, W){
   return { x: g.inL + 24 + (i % perRow) * step + (row ? step / 2 : 0), back: row === 1 };
 }
 const SHAPES = { 'Fruit & veg':'fruit', 'Bakery':'bread', 'Meat & poultry':'tray', 'Fish & seafood':'tray', 'Dairy & eggs':'carton',
-  'Cheese':'block', 'Chilled & deli':'tub', 'Frozen':'box', 'Herbs & spices':'jar', 'Pasta, rice & grains':'bag', 'Tins & jars':'tin',
+  'Cheese':'block', 'Chilled & deli':'tub', 'Frozen':'box', 'Herbs & spices':'spice', 'Pasta, rice & grains':'bag', 'Tins & jars':'tin',
   'Sauces & condiments':'bottle', 'Baking':'bag', 'Breakfast & spreads':'box', 'Tea & coffee':'box', 'World foods':'jar', 'Snacks & sweets':'crisps',
   'Soft drinks':'bottle', 'Beer, wine & spirits':'wine', 'Household':'spray', 'Toiletries & beauty':'pump', 'Health & medicine':'box', 'Baby':'tub', 'Pets':'bag' };
 const seedOf = id => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -2615,7 +2679,7 @@ const D = {
   spray:(x,y,c)=>`<path d="M${x-9} ${y} V${y-36} q0 -6 6 -6 h6 q6 0 6 6 V${y} Z" fill="${c}" stroke="${E}"/><path d="M${x-3} ${y-42} v-8 h10 l4 4 h-7 v4 Z" fill="#fff" stroke="${E}"/><rect x="${x-9}" y="${y-28}" width="18" height="10" fill="${LBL}"/>`,
   crisps:(x,y,c)=>`<path d="M${x-13} ${y} q-2 -18 2 -34 l-2 -4 h26 l-2 4 q4 16 2 34 Z" fill="${c}" stroke="${E}"/><ellipse cx="${x}" cy="${y-19}" rx="7" ry="6" fill="${LBL}"/>`,
   loaf:(x,y,c)=>`<path d="M${x-15} ${y} V${y-22} q15 -14 30 0 V${y} Z" fill="${c}" stroke="${E}"/><path d="M${x-8} ${y-25} l4 5 M${x} ${y-28} l4 5 M${x+8} ${y-25} l-2 5" stroke="rgba(255,255,255,.5)" stroke-width="2"/>`,
-  baguette:(x,y,c,s)=>`<g transform="rotate(${12+s%10} ${x} ${y})"><rect x="${x-6}" y="${y-64}" width="12" height="64" rx="6" fill="${c}" stroke="${E}"/><path d="M${x-3} ${y-54} l6 -4 M${x-3} ${y-40} l6 -4 M${x-3} ${y-26} l6 -4" stroke="rgba(255,255,255,.5)" stroke-width="2"/></g>`,
+  baguette:(x,y,c,_,s)=>`<g transform="rotate(${12+s%10} ${x} ${y})"><rect x="${x-6}" y="${y-64}" width="12" height="64" rx="6" fill="${c}" stroke="${E}"/><path d="M${x-3} ${y-54} l6 -4 M${x-3} ${y-40} l6 -4 M${x-3} ${y-26} l6 -4" stroke="rgba(255,255,255,.5)" stroke-width="2"/></g>`,
   wedge:(x,y,c)=>`<path d="M${x-15} ${y} V${y-16} l30 -8 V${y} Z" fill="${c}" stroke="${E}"/><circle cx="${x-6}" cy="${y-7}" r="2.4" fill="${SH}"/><circle cx="${x+6}" cy="${y-11}" r="2" fill="${SH}"/>`,
   eggbox:(x,y)=>`<rect x="${x-17}" y="${y-18}" width="34" height="18" rx="4" fill="#C9B48F" stroke="${E}"/>`+[-11,0,11].map(o=>`<circle cx="${x+o}" cy="${y-18}" r="5" fill="#C9B48F" stroke="${E}"/>`).join(''),
   wine:(x,y,c)=>`<path d="M${x-7} ${y} V${y-36} q0 -8 4 -11 V${y-60} h6 v13 q4 3 4 11 V${y} Z" fill="${c}" stroke="${E}"/><rect x="${x-5}" y="${y-30}" width="10" height="12" rx="1.5" fill="#F4E9D8"/><rect x="${x-3}" y="${y-63}" width="6" height="5" fill="#C8A04B"/>`,
@@ -2635,7 +2699,7 @@ const D = {
   biscuits:(x,y)=>`<rect x="${x-18}" y="${y-14}" width="36" height="14" rx="7" fill="#C8102E" stroke="${E}"/><circle cx="${x+12}" cy="${y-7}" r="6" fill="#E0A857" stroke="${E}"/><path d="M${x-14} ${y-7} h14" stroke="${LBL}" stroke-width="3"/>`,
   sweets:(x,y)=>[-10,0,10].map((o,i)=>`<ellipse cx="${x+o}" cy="${y-6-(i%2)*6}" rx="6" ry="4" fill="${['#F26B8A','#F6D33C','#6DBE5A'][i]}" stroke="${E}"/>`).join(''),
   banana:(x,y)=>`<g transform="translate(${x} ${y}) scale(.88) translate(${-x} ${-y}) rotate(-12 ${x} ${y})"><path d="M${x-22} ${y-14} q22 24 44 -2 q-2 8 -8 12 q-20 14 -40 -2 Z" fill="#F2D04B" stroke="${E}"/><path d="M${x-22} ${y-14} l-4 -5" stroke="#6B4A1E" stroke-width="3" stroke-linecap="round"/><path d="M${x+21} ${y-17} l3 -2" stroke="#6B4A1E" stroke-width="2.5" stroke-linecap="round"/></g>`,
-  carrot:(x,y,c,s)=>`<g transform="rotate(${22+s%10} ${x} ${y})"><path d="M${x-7} ${y-40} h14 l-7 40 Z" fill="#F2893B" stroke="${E}"/><path d="M${x} ${y-40} l-8 -10 M${x} ${y-40} v-12 M${x} ${y-40} l8 -10" stroke="#4EA64B" stroke-width="3" stroke-linecap="round"/></g>`,
+  carrot:(x,y,c,_,s)=>`<g transform="rotate(${22+s%10} ${x} ${y})"><path d="M${x-7} ${y-40} h14 l-7 40 Z" fill="#F2893B" stroke="${E}"/><path d="M${x} ${y-40} l-8 -10 M${x} ${y-40} v-12 M${x} ${y-40} l8 -10" stroke="#4EA64B" stroke-width="3" stroke-linecap="round"/></g>`,
   broccoli:(x,y)=>`<path d="M${x-4} ${y} V${y-16} h8 V${y} Z" fill="#B9D27A" stroke="${E}"/>`+[[-11,-20,9],[0,-28,11],[11,-20,9],[-5,-14,7],[6,-14,7]].map(([ox,oy,r])=>`<circle cx="${x+ox}" cy="${y+oy}" r="${r}" fill="#3E8E3E" stroke="${E}"/>`).join(''),
   lettuce:(x,y)=>`<circle cx="${x}" cy="${y-14}" r="14" fill="#8FC76A" stroke="${E}"/><path d="M${x-10} ${y-13} q6 -12 14 -8 M${x-4} ${y-23} q8 2 10 10" stroke="rgba(255,255,255,.4)" stroke-width="2" fill="none"/>`,
   grapes:(x,y,c)=>[[0,-28],[-8,-20],[8,-20],[0,-20],[-5,-12],[5,-12],[0,-5]].map(([ox,oy])=>`<circle cx="${x+ox}" cy="${y+oy}" r="5.5" fill="${c}" stroke="${E}"/>`).join('')+`<path d="M${x} ${y-33} v-6" stroke="#6B4A1E" stroke-width="2"/>`,
@@ -2649,7 +2713,7 @@ const D = {
   potato:(x,y)=>`<ellipse cx="${x}" cy="${y-10}" rx="15" ry="10" fill="#C9A66B" stroke="${E}"/><circle cx="${x-6}" cy="${y-12}" r="1.5" fill="rgba(0,0,0,.2)"/><circle cx="${x+5}" cy="${y-7}" r="1.5" fill="rgba(0,0,0,.2)"/>`,
   onion:(x,y,c)=>`<circle cx="${x}" cy="${y-11}" r="11" fill="${c}" stroke="${E}"/><path d="M${x} ${y-22} q-2 -6 0 -9 q2 3 0 9" fill="#B89A5E"/><path d="M${x-4} ${y-18} q4 6 0 12 M${x+4} ${y-18} q-4 6 0 12" stroke="rgba(0,0,0,.12)" stroke-width="1.5" fill="none"/>`,
   pepper:(x,y,c)=>`<path d="M${x-11} ${y-8} q0 -18 11 -18 q11 0 11 18 q0 8 -11 8 q-11 0 -11 -8 Z" fill="${c}" stroke="${E}"/><path d="M${x} ${y-26} v-6" stroke="#4EA64B" stroke-width="2.5" stroke-linecap="round"/>`,
-  cucumber:(x,y,c,s)=>`<rect x="${x-6}" y="${y-44}" width="12" height="44" rx="6" fill="${c}" stroke="${E}" transform="rotate(${8+s%8} ${x} ${y})"/>`,
+  cucumber:(x,y,c,_,s)=>`<rect x="${x-6}" y="${y-44}" width="12" height="44" rx="6" fill="${c}" stroke="${E}" transform="rotate(${8+s%8} ${x} ${y})"/>`,
   mushroom:(x,y)=>`<rect x="${x-4}" y="${y-12}" width="8" height="12" rx="2" fill="#EFE7D8" stroke="${E}"/><path d="M${x-13} ${y-11} q13 -22 26 0 Z" fill="#C8B49A" stroke="${E}"/>`,
   avocado:(x,y)=>`<path d="M${x-9} ${y-10} q0 -22 9 -22 q9 0 9 22 q0 10 -9 10 q-9 0 -9 -10 Z" fill="#3E6B2E" stroke="${E}"/>`,
   corn:(x,y)=>`<rect x="${x-6}" y="${y-36}" width="12" height="36" rx="6" fill="#F6D33C" stroke="${E}" transform="rotate(14 ${x} ${y})"/><path d="M${x-8} ${y} q-4 -18 2 -30 M${x+8} ${y} q4 -18 -2 -30" stroke="#6DBE5A" stroke-width="4" fill="none" stroke-linecap="round" transform="rotate(14 ${x} ${y})"/>`,
@@ -2689,10 +2753,151 @@ const D = {
   soap:(x,y,c)=>`<rect x="${x-14}" y="${y-12}" width="28" height="12" rx="6" fill="${c}" stroke="${E}"/><ellipse cx="${x-4}" cy="${y-8}" rx="4" ry="1.5" fill="rgba(255,255,255,.5)"/>`,
   razor:(x,y)=>`<g transform="rotate(-25 ${x} ${y})"><rect x="${x-3}" y="${y-36}" width="6" height="36" rx="3" fill="#5BA4D9" stroke="${E}"/><rect x="${x-9}" y="${y-42}" width="18" height="8" rx="2" fill="#D7DCDF" stroke="${E}"/></g>`,
   cottonbuds:(x,y)=>`<rect x="${x-10}" y="${y-30}" width="20" height="30" rx="3" fill="#CDE8F7" stroke="${E}" opacity=".9"/>`+[-5,0,5].map(o=>`<path d="M${x+o} ${y-26} v20" stroke="#fff" stroke-width="1.5"/><circle cx="${x+o}" cy="${y-26}" r="2" fill="#fff"/>`).join(''),
-  generic_fruit:(x,y,c,s)=>{ const r=9+s%4, c2=['#6DBE5A','#D6544F','#F2A93B','#F2D04B'][s%4]; return `<circle cx="${x-5}" cy="${y-r}" r="${r}" fill="${c2}" stroke="${E}"/><circle cx="${x+7}" cy="${y-r+2}" r="${r-2}" fill="${c}" stroke="${E}"/><path d="M${x-5} ${y-2*r} q2 -5 5 -6" stroke="#5B3A1E" stroke-width="2" fill="none"/>`; },
+  coconut:(x,y)=>`<circle cx="${x}" cy="${y-13}" r="13" fill="#7A5230" stroke="${E}"/><circle cx="${x-4}" cy="${y-17}" r="1.8" fill="#3E2716"/><circle cx="${x+3}" cy="${y-18}" r="1.8" fill="#3E2716"/><circle cx="${x}" cy="${y-13}" r="1.8" fill="#3E2716"/>`,
+  rhubarb:(x,y)=>`<path d="M${x-6} ${y} l2 -40 M${x} ${y} l0 -42 M${x+6} ${y} l-2 -40" stroke="#D64F6A" stroke-width="5" stroke-linecap="round"/><path d="M${x-12} ${y-40} q12 -14 24 0 q-12 6 -24 0 Z" fill="#4EA64B" stroke="${E}"/>`,
+  root:(x,y,c,_,s)=>`<g transform="rotate(${22+(s|0)%10} ${x} ${y})"><path d="M${x-7} ${y-40} h14 l-7 40 Z" fill="${c}" stroke="${E}"/><path d="M${x-4} ${y-28} h6 M${x-3} ${y-16} h4" stroke="rgba(0,0,0,.14)" stroke-width="1.5"/><path d="M${x} ${y-40} l-6 -9 M${x} ${y-40} l6 -9" stroke="#4EA64B" stroke-width="3" stroke-linecap="round"/></g>`,
+  aubergine:(x,y)=>`<g transform="rotate(20 ${x} ${y})"><path d="M${x-9} ${y-10} q0 -26 9 -30 q9 4 9 30 q0 10 -9 10 q-9 0 -9 -10 Z" fill="#5B2A6E" stroke="${E}"/><path d="M${x-7} ${y-38} q7 -6 14 0 l-4 4 h-6 Z" fill="#4EA64B"/><path d="M${x} ${y-42} v-5" stroke="#4EA64B" stroke-width="2.5"/></g>`,
+  beet:(x,y)=>`<circle cx="${x}" cy="${y-12}" r="12" fill="#8E2346" stroke="${E}"/><path d="M${x} ${y} v4" stroke="#8E2346" stroke-width="2"/><path d="M${x} ${y-24} q-8 -10 -10 -16 M${x} ${y-24} q8 -10 10 -16" stroke="#4EA64B" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+  radish:(x,y)=>[-8,6].map(o=>`<circle cx="${x+o}" cy="${y-9}" r="8" fill="#E0436A" stroke="${E}"/><path d="M${x+o} ${y-1} v3" stroke="#fff" stroke-width="2"/><path d="M${x+o} ${y-17} q-3 -8 -6 -10 M${x+o} ${y-17} q3 -8 6 -10" stroke="#4EA64B" stroke-width="2.5" fill="none"/>`).join(''),
+  turnip:(x,y,c)=>`<circle cx="${x}" cy="${y-13}" r="13" fill="#F1E6C8" stroke="${E}"/><path d="M${x-13} ${y-15} a13 13 0 0 1 26 0 Z" fill="${c}"/><path d="M${x} ${y-26} q-4 -8 -8 -10 M${x} ${y-26} q4 -8 8 -10" stroke="#4EA64B" stroke-width="2.5" fill="none"/>`,
+  fennel:(x,y)=>`<path d="M${x-13} ${y-8} q0 -14 13 -18 q13 4 13 18 q0 8 -13 8 q-13 0 -13 -8 Z" fill="#E4EEC4" stroke="${E}"/><path d="M${x-4} ${y-24} l-4 -14 M${x} ${y-26} v-16 M${x+4} ${y-24} l4 -14" stroke="#8CC63F" stroke-width="3" stroke-linecap="round"/>`,
+  greens:(x,y,c)=>`<path d="M${x-4} ${y} q-2 -16 0 -22 h8 q2 6 0 22 Z" fill="#F1F5E6" stroke="${E}"/><path d="M${x} ${y-18} q-16 -8 -12 -28 q10 6 12 20 q2 -14 12 -20 q4 20 -12 28 Z" fill="${c}" stroke="${E}"/>`,
+  dragonfruit:(x,y)=>`<ellipse cx="${x}" cy="${y-13}" rx="12" ry="13" fill="#E0436A" stroke="${E}"/><path d="M${x-10} ${y-20} l-5 -3 M${x+10} ${y-20} l5 -3 M${x-11} ${y-8} l-5 1 M${x+11} ${y-8} l5 1 M${x} ${y-26} v-5" stroke="#6DBE5A" stroke-width="2.5" stroke-linecap="round"/>`,
+  passion:(x,y)=>`<circle cx="${x}" cy="${y-11}" r="11" fill="#5B2A6E" stroke="${E}"/><circle cx="${x-4}" cy="${y-15}" r="1.5" fill="rgba(255,255,255,.35)"/><circle cx="${x+3}" cy="${y-9}" r="1.5" fill="rgba(255,255,255,.35)"/>`,
+  pod:(x,y,c)=>`<g transform="rotate(-18 ${x} ${y})"><path d="M${x-18} ${y-6} q18 -14 36 0 q-18 10 -36 0 Z" fill="${c}" stroke="${E}"/><circle cx="${x-8}" cy="${y-6}" r="2.4" fill="rgba(0,0,0,.12)"/><circle cx="${x}" cy="${y-7}" r="2.4" fill="rgba(0,0,0,.12)"/><circle cx="${x+8}" cy="${y-6}" r="2.4" fill="rgba(0,0,0,.12)"/></g>`,
+  plant:(x,y,c)=>`<path d="M${x-11} ${y-16} h22 l-3 16 h-16 Z" fill="#C8693E" stroke="${E}"/><rect x="${x-12}" y="${y-19}" width="24" height="4" rx="1.5" fill="#B05A33"/><path d="M${x} ${y-19} q-12 -6 -12 -20 q10 2 12 14 q2 -14 12 -16 q0 14 -12 22" fill="${c}" stroke="${E}"/>`,
+  croissant:(x,y)=>`<path d="M${x-20} ${y-4} q4 -22 20 -22 q16 0 20 22 q-6 -8 -12 -6 q-8 -8 -16 0 q-6 -2 -12 6 Z" fill="#E0A857" stroke="${E}"/><path d="M${x-8} ${y-18} l2 8 M${x} ${y-21} v9 M${x+8} ${y-18} l-2 8" stroke="#B87F35" stroke-width="1.5"/>`,
+  flatbread:(x,y,c)=>`<ellipse cx="${x}" cy="${y-6}" rx="20" ry="6" fill="${c}" stroke="${E}"/><circle cx="${x-7}" cy="${y-7}" r="1.6" fill="#B87F35"/><circle cx="${x+5}" cy="${y-5}" r="1.6" fill="#B87F35"/><circle cx="${x+10}" cy="${y-8}" r="1.6" fill="#B87F35"/>`,
+  bun:(x,y,c)=>`<path d="M${x-15} ${y} q0 -24 15 -24 q15 0 15 24 Z" fill="${c}" stroke="${E}"/><path d="M${x-8} ${y-16} h16 M${x} ${y-22} v14" stroke="#F6EEDC" stroke-width="3" stroke-linecap="round"/>`,
+  icedbun:(x,y)=>`<rect x="${x-18}" y="${y-14}" width="36" height="14" rx="7" fill="#E0B068" stroke="${E}"/><path d="M${x-16} ${y-10} q16 -10 32 0 v-2 q-16 -10 -32 0 Z" fill="#fff"/><rect x="${x-18}" y="${y-16}" width="36" height="6" rx="3" fill="#F6EEDC"/>`,
+  cupcake:(x,y,c)=>`<path d="M${x-11} ${y-14} h22 l-3 14 h-16 Z" fill="#5BA4D9" stroke="${E}"/><path d="M${x-12} ${y-14} q0 -14 12 -16 q12 2 12 16 Z" fill="${c}" stroke="${E}"/><circle cx="${x}" cy="${y-31}" r="3" fill="#C8102E"/>`,
+  doughnut:(x,y)=>`<circle cx="${x}" cy="${y-13}" r="13" fill="#D9A05B" stroke="${E}"/><circle cx="${x}" cy="${y-14}" r="11" fill="#F26B8A"/><circle cx="${x}" cy="${y-14}" r="4" fill="var(--bg)" stroke="${E}"/><path d="M${x-7} ${y-19} l2 1 M${x+5} ${y-20} l2 -1 M${x+7} ${y-11} l1 2" stroke="#fff" stroke-width="1.6"/>`,
+  pancakes:(x,y)=>[0,6,12].map(o=>`<ellipse cx="${x}" cy="${y-4-o}" rx="16" ry="4" fill="#E0B068" stroke="${E}"/>`).join('')+`<path d="M${x-4} ${y-20} q4 6 8 2" fill="#C8102E" stroke="#C8102E" stroke-width="3"/>`,
+  waffle:(x,y)=>`<rect x="${x-14}" y="${y-22}" width="28" height="22" rx="3" fill="#E0A857" stroke="${E}"/><path d="M${x-7} ${y-22} v22 M${x} ${y-22} v22 M${x+7} ${y-22} v22 M${x-14} ${y-15} h28 M${x-14} ${y-8} h28" stroke="#B87F35" stroke-width="1.5"/>`,
+  eclair:(x,y)=>`<rect x="${x-18}" y="${y-10}" width="36" height="10" rx="5" fill="#E0B068" stroke="${E}"/><rect x="${x-17}" y="${y-13}" width="34" height="6" rx="3" fill="#5A3A28"/>`,
+  ribs:(x,y)=>`<path d="M${x-18} ${y} q0 -18 18 -20 q18 2 18 20 Z" fill="#A8442E" stroke="${E}"/>`+[-10,-3,4,11].map(o=>`<path d="M${x+o} ${y-2} l1 -15" stroke="#F1ECE2" stroke-width="2.5" stroke-linecap="round"/>`).join(''),
+  meatballs:(x,y,c)=>`<rect x="${x-17}" y="${y-8}" width="34" height="8" rx="2.5" fill="#E9ECEE" stroke="${E}"/>`+[[-10,-12],[0,-12],[10,-12],[-5,-19],[5,-19]].map(([ox,oy])=>`<circle cx="${x+ox}" cy="${y+oy}" r="6" fill="${c}" stroke="${E}"/>`).join(''),
+  pudding:(x,y,c)=>`<rect x="${x-17}" y="${y-14}" width="34" height="14" rx="7" fill="${c}" stroke="${E}"/><circle cx="${x-6}" cy="${y-8}" r="1.6" fill="#F1ECE2"/><circle cx="${x+4}" cy="${y-6}" r="1.6" fill="#F1ECE2"/><circle cx="${x+9}" cy="${y-10}" r="1.6" fill="#F1ECE2"/><path d="M${x-18} ${y-7} h-3 M${x+18} ${y-7} h3" stroke="#C8A04B" stroke-width="2.5"/>`,
+  shell:(x,y,c)=>[-9,6].map((o,i)=>`<ellipse cx="${x+o}" cy="${y-7-i*3}" rx="9" ry="6" fill="${c}" stroke="${E}" transform="rotate(${i?-20:15} ${x+o} ${y-7})"/>`).join('')+`<path d="M${x-14} ${y-7} q5 -3 10 0" stroke="rgba(255,255,255,.3)" stroke-width="1.5" fill="none"/>`,
+  scallop:(x,y)=>`<path d="M${x} ${y} l-15 -16 q15 -14 30 0 Z" fill="#F2B5A0" stroke="${E}"/><path d="M${x} ${y} l-8 -20 M${x} ${y} v-22 M${x} ${y} l8 -20" stroke="rgba(0,0,0,.12)" stroke-width="1.5"/>`,
+  crab:(x,y)=>`<ellipse cx="${x}" cy="${y-9}" rx="13" ry="8" fill="#E2603C" stroke="${E}"/><path d="M${x-12} ${y-12} q-8 -6 -6 -14 M${x+12} ${y-12} q8 -6 6 -14" stroke="#E2603C" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="${x-18}" cy="${y-27}" r="4" fill="#E2603C"/><circle cx="${x+18}" cy="${y-27}" r="4" fill="#E2603C"/><path d="M${x-10} ${y-3} l-6 4 M${x+10} ${y-3} l6 4" stroke="#E2603C" stroke-width="2.5"/>`,
+  lobster:(x,y)=>`<g transform="rotate(-10 ${x} ${y})"><rect x="${x-4}" y="${y-34}" width="8" height="30" rx="4" fill="#D6334A" stroke="${E}"/><path d="M${x-4} ${y-30} q-12 -4 -12 -14 M${x+4} ${y-30} q12 -4 12 -14" stroke="#D6334A" stroke-width="3.5" fill="none" stroke-linecap="round"/><ellipse cx="${x-16}" cy="${y-46}" rx="4" ry="6" fill="#D6334A"/><ellipse cx="${x+16}" cy="${y-46}" rx="4" ry="6" fill="#D6334A"/><path d="M${x-6} ${y-4} h12 l-6 4 Z" fill="#D6334A"/></g>`,
+  squid:(x,y,c)=>`<path d="M${x-8} ${y-14} q0 -24 8 -28 q8 4 8 28 Z" fill="${c}" stroke="${E}"/><path d="M${x-7} ${y-14} q-3 8 -6 12 M${x-3} ${y-14} q-1 8 -2 14 M${x+3} ${y-14} q1 8 2 14 M${x+7} ${y-14} q3 8 6 12" stroke="${c}" stroke-width="2.5" fill="none" stroke-linecap="round"/><circle cx="${x-3}" cy="${y-20}" r="1.5" fill="#223"/>`,
+  flattin:(x,y,c)=>`<rect x="${x-17}" y="${y-10}" width="34" height="10" rx="5" fill="#D7DCDF" stroke="${E}"/><rect x="${x-15}" y="${y-8}" width="30" height="6" rx="3" fill="${c}"/><path d="M${x+12} ${y-10} q6 -6 4 -10" stroke="#AAB0B5" stroke-width="2" fill="none"/>`,
+  smallbottle:(x,y,c)=>`<path d="M${x-6} ${y} V${y-18} q0 -5 3 -7 V${y-28} h6 v3 q3 2 3 7 V${y} Z" fill="#fff" stroke="${E}"/><rect x="${x-4}" y="${y-31}" width="8" height="4" rx="1" fill="${c}"/><rect x="${x-6}" y="${y-14}" width="12" height="7" fill="${c}"/>`,
+  dessert:(x,y,c)=>`<path d="M${x-11} ${y-30} h22 l-3 30 h-16 Z" fill="rgba(255,255,255,.7)" stroke="${E}"/><rect x="${x-9}" y="${y-12}" width="18" height="10" fill="${c}"/><rect x="${x-10}" y="${y-20}" width="20" height="8" fill="#F6EEDC"/><rect x="${x-10}" y="${y-26}" width="20" height="6" fill="#fff"/><circle cx="${x}" cy="${y-28}" r="3" fill="#C8102E"/>`,
+  roundcheese:(x,y,c)=>`<ellipse cx="${x}" cy="${y-6}" rx="16" ry="6" fill="${c}" stroke="${E}"/><rect x="${x-16}" y="${y-14}" width="32" height="8" fill="${c}"/><ellipse cx="${x}" cy="${y-14}" rx="16" ry="6" fill="${c}" stroke="${E}" style="filter:brightness(1.08)"/><path d="M${x} ${y-14} l12 -4 v8 Z" fill="#F6E7A8"/>`,
+  bluecheese:(x,y)=>`<path d="M${x-15} ${y} V${y-16} l30 -8 V${y} Z" fill="#F1EDDC" stroke="${E}"/><path d="M${x-10} ${y-6} q3 -4 6 -1 M${x+2} ${y-12} q3 -3 6 0 M${x+5} ${y-4} q2 -3 5 -1" stroke="#5B7FA8" stroke-width="2" fill="none"/>`,
+  ballcheese:(x,y)=>`<circle cx="${x}" cy="${y-12}" r="12" fill="#FAF8F2" stroke="${E}"/><path d="M${x-3} ${y-24} q3 -6 6 0" stroke="#4EA64B" stroke-width="2.5" fill="none"/>`,
+  triangles:(x,y,c)=>`<ellipse cx="${x}" cy="${y-4}" rx="16" ry="5" fill="${c}" stroke="${E}"/><rect x="${x-16}" y="${y-12}" width="32" height="8" fill="${c}"/><ellipse cx="${x}" cy="${y-12}" rx="16" ry="5" fill="#fff" stroke="${E}"/><path d="M${x} ${y-12} l-10 -3 M${x} ${y-12} l10 -3 M${x} ${y-12} v5" stroke="${c}" stroke-width="1.2"/>`,
+  pasty:(x,y)=>`<path d="M${x-18} ${y} q2 -24 18 -24 q16 0 18 24 Z" fill="#E0A857" stroke="${E}"/><path d="M${x-14} ${y-10} q2 -2 4 0 q2 -2 4 -4 q2 -2 4 -4 q3 0 4 0 q2 0 4 2 q2 2 4 4 q2 2 4 2" stroke="#B87F35" stroke-width="2" fill="none"/>`,
+  samosa:(x,y,c)=>`<path d="M${x-16} ${y} L${x} ${y-24} L${x+16} ${y} Z" fill="${c}" stroke="${E}" stroke-linejoin="round"/><path d="M${x-6} ${y-4} l6 -10 l6 10" stroke="rgba(0,0,0,.12)" stroke-width="1.5" fill="none"/>`,
+  sushi:(x,y)=>[-9,9].map(o=>`<ellipse cx="${x+o}" cy="${y-6}" rx="8" ry="4" fill="#2B3B2E"/><rect x="${x+o-8}" y="${y-18}" width="16" height="12" fill="#2B3B2E"/><ellipse cx="${x+o}" cy="${y-18}" rx="8" ry="4" fill="#fff" stroke="${E}"/><circle cx="${x+o}" cy="${y-18}" r="2.5" fill="#F0876B"/>`).join(''),
+  sandwich:(x,y)=>`<path d="M${x-16} ${y} L${x+16} ${y} L${x+16} ${y-30} Z" fill="#E8D6A8" stroke="${E}"/><path d="M${x-12} ${y-2} L${x+14} ${y-2} L${x+14} ${y-24}" fill="none" stroke="#6DBE5A" stroke-width="2.5"/><path d="M${x-16} ${y} L${x+16} ${y-30}" stroke="#F6EEDC" stroke-width="3"/><rect x="${x-17}" y="${y-31}" width="34" height="31" fill="rgba(255,255,255,.12)" stroke="${E}"/>`,
+  tofu:(x,y)=>`<rect x="${x-14}" y="${y-16}" width="28" height="16" rx="2" fill="#F6F1E4" stroke="${E}"/><path d="M${x-14} ${y-16} l4 -4 h28 l-4 4 M${x+14} ${y} l4 -4 v-16" fill="#ECE5D2" stroke="${E}"/>`,
+  lolly:(x,y,c)=>`<rect x="${x-8}" y="${y-38}" width="16" height="26" rx="8" fill="${c}" stroke="${E}"/><rect x="${x-8}" y="${y-38}" width="16" height="9" rx="6" fill="#F6D33C"/><rect x="${x-1.5}" y="${y-12}" width="3" height="12" fill="#D9B98A"/>`,
+  fries:(x,y)=>`<path d="M${x-8} ${y-18} l-2 -14 M${x-3} ${y-18} l-1 -18 M${x+2} ${y-18} l1 -16 M${x+7} ${y-18} l2 -14" stroke="#F6D33C" stroke-width="4" stroke-linecap="round"/><path d="M${x-12} ${y-20} h24 l-3 20 h-18 Z" fill="#D6334A" stroke="${E}"/>`,
+  icebag:(x,y)=>`<path d="M${x-13} ${y} V${y-30} q13 -6 26 0 V${y} Z" fill="rgba(205,232,247,.8)" stroke="${E}"/>`+[[-6,-8],[5,-10],[-3,-19],[6,-21]].map(([ox,oy])=>`<rect x="${x+ox-3.5}" y="${y+oy-3.5}" width="7" height="7" rx="1.5" fill="#fff" stroke="#9CC9E4"/>`).join(''),
+  spice:(x,y,c)=>`<rect x="${x-8}" y="${y-28}" width="16" height="28" rx="3" fill="rgba(255,255,255,.55)" stroke="${E}"/><rect x="${x-7}" y="${y-22}" width="14" height="21" rx="2" fill="${c}"/><rect x="${x-8.5}" y="${y-34}" width="17" height="7" rx="2" fill="#3A3F42"/><rect x="${x-7}" y="${y-17}" width="14" height="7" fill="${LBL}"/>`,
+  sachet:(x,y,c)=>`<g transform="rotate(-8 ${x} ${y})"><rect x="${x-12}" y="${y-24}" width="24" height="24" rx="2" fill="${c}" stroke="${E}"/><path d="M${x-12} ${y-20} h24" stroke="rgba(255,255,255,.5)" stroke-dasharray="2 2"/><rect x="${x-8}" y="${y-15}" width="16" height="9" rx="1.5" fill="${LBL}"/></g>`,
+  shaker:(x,y)=>`<rect x="${x-8}" y="${y-32}" width="16" height="32" rx="3" fill="rgba(255,255,255,.7)" stroke="${E}"/>`+[[-4,-6,'#F26B8A'],[3,-9,'#5BA4D9'],[-2,-14,'#F6D33C'],[4,-18,'#6DBE5A'],[-4,-22,'#B57BD1'],[2,-25,'#F2893B']].map(([ox,oy,c])=>`<rect x="${x+ox-2}" y="${y+oy-1}" width="4" height="2" rx="1" fill="${c}"/>`).join('')+`<rect x="${x-9}" y="${y-36}" width="18" height="6" rx="2" fill="#F26B8A"/>`,
+  extract:(x,y,c)=>`<path d="M${x-6} ${y} V${y-18} q0 -4 3 -6 V${y-30} h6 v6 q3 2 3 6 V${y} Z" fill="${c}" stroke="${E}"/><rect x="${x-4}" y="${y-35}" width="8" height="6" rx="1.5" fill="#222"/><rect x="${x-6}" y="${y-14}" width="12" height="8" fill="${LBL}"/>`,
+  driedfruit:(x,y,c)=>`<path d="M${x-13} ${y} V${y-32} q13 -6 26 0 V${y} Z" fill="rgba(255,255,255,.75)" stroke="${E}"/>`+[[-6,-8],[4,-7],[-2,-15],[7,-16],[-7,-22],[2,-24]].map(([ox,oy])=>`<ellipse cx="${x+ox}" cy="${y+oy}" rx="3.5" ry="2.5" fill="${c}"/>`).join('')+`<rect x="${x-13}" y="${y-34}" width="26" height="5" fill="${c}"/>`,
+  treacletin:(x,y,c)=>`<rect x="${x-12}" y="${y-24}" width="24" height="24" fill="${c}" stroke="${E}"/><ellipse cx="${x}" cy="${y-24}" rx="12" ry="3.5" fill="#C8A04B" stroke="${E}"/><circle cx="${x}" cy="${y-12}" r="6" fill="#F6D33C"/>`,
+  taco:(x,y)=>`<path d="M${x-18} ${y} a18 18 0 0 1 36 0 Z" fill="#F2C14E" stroke="${E}"/><path d="M${x-14} ${y-6} q4 -6 8 -2 q4 -6 8 -2 q4 -6 8 -2" stroke="#4EA64B" stroke-width="3" fill="none"/><path d="M${x-12} ${y-3} h24" stroke="#D6334A" stroke-width="3"/>`,
+  nori:(x,y)=>`<rect x="${x-14}" y="${y-30}" width="28" height="30" rx="2" fill="#1F3A2B" stroke="${E}"/><rect x="${x-10}" y="${y-22}" width="20" height="10" rx="1.5" fill="${LBL}"/>`,
+  poppadom:(x,y)=>`<ellipse cx="${x}" cy="${y-6}" rx="18" ry="6" fill="#F2DB9A" stroke="${E}"/><ellipse cx="${x}" cy="${y-9}" rx="16" ry="5" fill="#F6E5B0" stroke="${E}"/>`+[[-7,-9],[4,-10],[9,-8],[-2,-8]].map(([ox,oy])=>`<circle cx="${x+ox}" cy="${y+oy}" r="1" fill="#B87F35"/>`).join(''),
+  spirit:(x,y,c)=>`<path d="M${x-10} ${y} V${y-30} q0 -4 4 -4 h3 V${y-44} h6 v10 h3 q4 0 4 4 V${y} Z" fill="${c}" stroke="${E}" opacity=".92"/><rect x="${x-3.5}" y="${y-48}" width="7" height="5" fill="#333"/><rect x="${x-10}" y="${y-24}" width="20" height="12" fill="#F4E9D8"/>`,
+  gloves:(x,y,c)=>`<path d="M${x-9} ${y} V${y-20} l-4 -8 q-1 -4 3 -3 l4 6 V${y-34} q2 -4 4 0 v8 v-10 q2 -4 4 0 v10 v-8 q2 -4 4 0 v22 V${y} Z" fill="${c}" stroke="${E}" stroke-linejoin="round"/>`,
+  mop:(x,y)=>`<path d="M${x+4} ${y-14} L${x+12} ${y-58}" stroke="#AAB0B5" stroke-width="3.5" stroke-linecap="round"/><path d="M${x-10} ${y} q2 -14 14 -16 q12 2 12 16 Z" fill="#EDE6D6" stroke="${E}"/><path d="M${x-6} ${y} l2 -10 M${x} ${y} v-12 M${x+6} ${y} l-1 -12" stroke="rgba(0,0,0,.12)"/>`,
+  brush:(x,y,c)=>`<rect x="${x-16}" y="${y-14}" width="32" height="8" rx="3" fill="${c}" stroke="${E}"/>`+[-12,-6,0,6,12].map(o=>`<path d="M${x+o} ${y-6} v6" stroke="#5A3A28" stroke-width="2"/>`).join(''),
+  tape:(x,y,c)=>`<circle cx="${x}" cy="${y-12}" r="12" fill="${c}" stroke="${E}"/><circle cx="${x}" cy="${y-12}" r="6" fill="var(--bg)" stroke="${E}"/>`,
+  diffuser:(x,y)=>`<path d="M${x-9} ${y} V${y-16} q0 -6 6 -8 h6 q6 2 6 8 V${y} Z" fill="#B57BD1" stroke="${E}" opacity=".9"/><path d="M${x-2} ${y-24} l-8 -24 M${x} ${y-24} l0 -26 M${x+2} ${y-24} l8 -24" stroke="#5A3A28" stroke-width="1.6"/>`,
+  logs:(x,y)=>[[-1,-6],[1,-16]].map(([o,oy],i)=>`<rect x="${x-17+i*3}" y="${y+oy-5}" width="32" height="10" rx="5" fill="#8B5A2B" stroke="${E}"/><ellipse cx="${x+13+i*3}" cy="${y+oy}" rx="4" ry="5" fill="#D9A05B" stroke="${E}"/>`).join(''),
+  envelope:(x,y)=>`<rect x="${x-17}" y="${y-22}" width="34" height="22" rx="2" fill="#F6F1E6" stroke="${E}"/><path d="M${x-17} ${y-22} l17 13 l17 -13" fill="none" stroke="#CFC8B8" stroke-width="1.8"/><rect x="${x+8}" y="${y-19}" width="6" height="7" fill="#D6334A"/>`,
+  card:(x,y,c)=>`<g transform="rotate(-6 ${x} ${y})"><rect x="${x-13}" y="${y-34}" width="26" height="34" rx="2" fill="${c}" stroke="${E}"/><path d="M${x} ${y-12} q-10 -8 -6 -14 q4 -4 6 1 q2 -5 6 -1 q4 6 -6 14 Z" fill="#fff"/></g>`,
+  pens:(x,y)=>['#2E5AA8','#D6334A','#222'].map((c,i)=>`<g transform="rotate(${-14+i*12} ${x} ${y})"><rect x="${x-2.5+(i-1)*6}" y="${y-42}" width="5" height="40" rx="2" fill="${c}" stroke="${E}"/><path d="M${x-2.5+(i-1)*6} ${y-2} l2.5 4 l2.5 -4" fill="#AAB0B5"/></g>`).join(''),
+  notebook:(x,y,c)=>`<rect x="${x-13}" y="${y-34}" width="26" height="34" rx="2" fill="${c}" stroke="${E}"/><path d="M${x-9} ${y-34} v34" stroke="rgba(255,255,255,.4)" stroke-width="2"/><rect x="${x-4}" y="${y-26}" width="13" height="7" fill="${LBL}"/>`,
+  cup:(x,y,c)=>`<path d="M${x-11} ${y-30} h22 l-4 30 h-14 Z" fill="${c}" stroke="${E}"/><path d="M${x-10} ${y-24} h20" stroke="rgba(255,255,255,.55)" stroke-width="3"/>`,
+  balloons:(x,y)=>[[-7,-38,'#D6334A'],[7,-42,'#5BA4D9'],[0,-30,'#F6D33C']].map(([ox,oy,c])=>`<path d="M${x+ox} ${y+oy+10} Q${x+ox/2} ${y-10} ${x} ${y}" stroke="#999" stroke-width="1" fill="none"/><ellipse cx="${x+ox}" cy="${y+oy}" rx="7" ry="9" fill="${c}" stroke="${E}"/>`).join(''),
+  skewers:(x,y)=>[-6,-2,2,6].map(o=>`<path d="M${x+o} ${y} l${o} -44" stroke="#D9B98A" stroke-width="2" stroke-linecap="round"/>`).join('')+`<rect x="${x-9}" y="${y-14}" width="18" height="12" rx="2" fill="${LBL}" stroke="${E}"/>`,
+  lipstick:(x,y,c)=>`<rect x="${x-6}" y="${y-18}" width="12" height="18" rx="1.5" fill="#222" stroke="${E}"/><rect x="${x-5}" y="${y-24}" width="10" height="6" fill="#C8A04B"/><path d="M${x-4} ${y-24} V${y-34} l8 -4 V${y-24} Z" fill="${c}"/>`,
+  mascara:(x,y,c)=>`<g transform="rotate(-18 ${x} ${y})"><rect x="${x-4}" y="${y-40}" width="8" height="40" rx="3" fill="${c}" stroke="${E}"/><rect x="${x-4}" y="${y-40}" width="8" height="14" rx="3" fill="#222"/></g>`,
+  compact:(x,y,c)=>`<ellipse cx="${x}" cy="${y-4}" rx="15" ry="5" fill="#222" stroke="${E}"/><rect x="${x-15}" y="${y-9}" width="30" height="5" fill="#222"/><ellipse cx="${x}" cy="${y-9}" rx="15" ry="5" fill="${c}" stroke="${E}"/>`,
+  nailpolish:(x,y,c)=>`<path d="M${x-9} ${y} V${y-14} q0 -6 6 -6 h6 q6 0 6 6 V${y} Z" fill="${c}" stroke="${E}"/><rect x="${x-4}" y="${y-34}" width="8" height="14" rx="2" fill="#222"/>`,
+  perfume:(x,y,c)=>`<rect x="${x-11}" y="${y-24}" width="22" height="24" rx="4" fill="${c}" stroke="${E}" opacity=".9"/><rect x="${x-3}" y="${y-30}" width="6" height="6" fill="#C8A04B"/><rect x="${x-6}" y="${y-38}" width="12" height="8" rx="2" fill="#C8A04B" stroke="${E}"/><path d="M${x-7} ${y-18} v10" stroke="rgba(255,255,255,.5)" stroke-width="2.5"/>`,
+  hairbrush:(x,y,c)=>`<g transform="rotate(-30 ${x} ${y})"><rect x="${x-3}" y="${y-22}" width="6" height="22" rx="3" fill="${c}" stroke="${E}"/><ellipse cx="${x}" cy="${y-32}" rx="9" ry="12" fill="${c}" stroke="${E}"/><ellipse cx="${x}" cy="${y-32}" rx="6" ry="9" fill="#333"/></g>`,
+  comb:(x,y,c)=>`<g transform="rotate(-10 ${x} ${y})"><rect x="${x-18}" y="${y-12}" width="36" height="5" rx="2" fill="${c}" stroke="${E}"/>`+[...Array(9)].map((_,i)=>`<path d="M${x-16+i*4} ${y-7} v7" stroke="${c}" stroke-width="2"/>`).join('')+`</g>`,
+  lipbalm:(x,y,c)=>`<rect x="${x-5}" y="${y-26}" width="10" height="26" rx="2" fill="${c}" stroke="${E}"/><rect x="${x-5}" y="${y-26}" width="10" height="8" rx="2" fill="#fff" stroke="${E}"/>`,
+  hairties:(x,y)=>['#D6334A','#222','#F26B8A'].map((c,i)=>`<ellipse cx="${x-8+i*8}" cy="${y-8-(i%2)*4}" rx="7" ry="5" fill="none" stroke="${c}" stroke-width="3"/>`).join(''),
+  medbottle:(x,y,c)=>`<rect x="${x-10}" y="${y-28}" width="20" height="28" rx="4" fill="${c}" stroke="${E}"/><rect x="${x-8}" y="${y-36}" width="16" height="8" rx="2" fill="#fff" stroke="${E}"/><rect x="${x-10}" y="${y-20}" width="20" height="11" fill="#fff"/><path d="M${x-3} ${y-14.5} h6 M${x} ${y-17.5} v6" stroke="#D6334A" stroke-width="2"/>`,
+  medbox:(x,y,c)=>`<rect x="${x-15}" y="${y-22}" width="30" height="22" rx="2" fill="#fff" stroke="${E}"/><rect x="${x-15}" y="${y-22}" width="30" height="6" fill="${c}"/><path d="M${x-4} ${y-8} h8 M${x} ${y-12} v8" stroke="${c}" stroke-width="2.5"/>`,
+  vitamins:(x,y,c)=>`<rect x="${x-10}" y="${y-28}" width="20" height="28" rx="4" fill="${c}" stroke="${E}"/><rect x="${x-11}" y="${y-34}" width="22" height="7" rx="2" fill="#fff" stroke="${E}"/><ellipse cx="${x}" cy="${y-14}" rx="6" ry="3" fill="#F6D33C" transform="rotate(-30 ${x} ${y-14})"/>`,
+  thermometer:(x,y)=>`<g transform="rotate(-25 ${x} ${y})"><rect x="${x-3.5}" y="${y-40}" width="7" height="34" rx="3.5" fill="#fff" stroke="${E}"/><circle cx="${x}" cy="${y-6}" r="5" fill="#D6334A" stroke="${E}"/><path d="M${x} ${y-10} v-18" stroke="#D6334A" stroke-width="2.5"/></g>`,
+  glasses:(x,y)=>`<circle cx="${x-9}" cy="${y-8}" r="7" fill="rgba(205,232,247,.6)" stroke="#222" stroke-width="2"/><circle cx="${x+9}" cy="${y-8}" r="7" fill="rgba(205,232,247,.6)" stroke="#222" stroke-width="2"/><path d="M${x-2} ${y-9} q2 -2 4 0" stroke="#222" stroke-width="2" fill="none"/>`,
+  vape:(x,y)=>`<rect x="${x-5}" y="${y-36}" width="10" height="36" rx="4" fill="#3A3F44" stroke="${E}"/><rect x="${x-3}" y="${y-42}" width="6" height="7" rx="2" fill="#5BA4D9"/>`,
+  babybottle:(x,y,c)=>`<rect x="${x-8}" y="${y-28}" width="16" height="28" rx="4" fill="rgba(255,255,255,.8)" stroke="${E}"/><rect x="${x-8}" y="${y-14}" width="16" height="14" rx="3" fill="#fff"/><rect x="${x-9}" y="${y-32}" width="18" height="5" rx="2" fill="${c}"/><path d="M${x-4} ${y-32} q4 -12 8 0 Z" fill="#E8C9A0" stroke="${E}"/>`,
+  dummy:(x,y,c)=>`<ellipse cx="${x}" cy="${y-10}" rx="14" ry="6" fill="${c}" stroke="${E}"/><circle cx="${x}" cy="${y-18}" r="6" fill="none" stroke="${c}" stroke-width="3"/><ellipse cx="${x}" cy="${y-4}" rx="5" ry="4" fill="#E8C9A0"/>`,
+  bib:(x,y,c)=>`<path d="M${x-12} ${y-26} q12 10 24 0 l-2 16 q-10 14 -20 0 Z" fill="${c}" stroke="${E}"/><circle cx="${x}" cy="${y-12}" r="3" fill="#fff"/>`,
+  creamtub:(x,y,c)=>`<rect x="${x-14}" y="${y-14}" width="28" height="14" rx="3" fill="#fff" stroke="${E}"/><rect x="${x-15}" y="${y-20}" width="30" height="7" rx="3" fill="${c}" stroke="${E}"/>`,
+  ball:(x,y,c)=>`<circle cx="${x}" cy="${y-11}" r="11" fill="${c}" stroke="${E}"/><path d="M${x-10} ${y-15} q10 6 20 0 M${x-10} ${y-7} q10 -6 20 0" stroke="#fff" stroke-width="2" fill="none"/>`,
+  poobags:(x,y)=>`<rect x="${x-9}" y="${y-22}" width="18" height="22" rx="3" fill="#6DBE5A" stroke="${E}"/><ellipse cx="${x}" cy="${y-22}" rx="9" ry="3" fill="#4EA64B"/><path d="M${x+9} ${y-12} q8 2 6 10" stroke="#6DBE5A" stroke-width="3" fill="none"/>`,
+  nuts:(x,y,c)=>`<path d="M${x-13} ${y} V${y-32} q13 -6 26 0 V${y} Z" fill="${c}" stroke="${E}"/><ellipse cx="${x-4}" cy="${y-16}" rx="5" ry="6" fill="#C9A66B" stroke="${E}"/><ellipse cx="${x+5}" cy="${y-13}" rx="4" ry="5" fill="#B88A4E" stroke="${E}"/>`,
+  pretzel:(x,y)=>`<path d="M${x} ${y-4} q-16 -6 -12 -18 q4 -8 12 2 q8 -10 12 -2 q4 12 -12 18 M${x-9} ${y-2} l18 -14 M${x+9} ${y-2} l-18 -14" stroke="#9C5B2E" stroke-width="4.5" fill="none" stroke-linecap="round"/>`,
+  chocbox:(x,y,c)=>`<path d="M${x-15} ${y} V${y-26} q15 -6 30 0 V${y} Z" fill="${c}" stroke="${E}"/><rect x="${x-16}" y="${y-30}" width="32" height="6" rx="3" fill="#C8A04B" stroke="${E}"/>`+[[-7,-14,'#D6334A'],[1,-16,'#F6D33C'],[8,-12,'#5BA4D9']].map(([ox,oy,cc])=>`<circle cx="${x+ox}" cy="${y+oy}" r="3.5" fill="${cc}"/>`).join(''),
+  cake:(x,y,c)=>`<rect x="${x-14}" y="${y-18}" width="28" height="18" rx="2" fill="${c}" stroke="${E}"/><rect x="${x-14}" y="${y-18}" width="14" height="9" fill="#F6D33C"/><rect x="${x}" y="${y-9}" width="14" height="9" fill="#F6D33C"/><rect x="${x-15}" y="${y-21}" width="30" height="4" rx="2" fill="#F6E5B0"/>`,
+  pouch:(x,y,c)=>`<path d="M${x-10} ${y} V${y-32} q10 -4 20 0 V${y} Z" fill="${c}" stroke="${E}" opacity=".95"/><path d="M${x+4} ${y-34} l2 -12" stroke="#fff" stroke-width="2"/><rect x="${x-7}" y="${y-22}" width="14" height="10" rx="2" fill="${LBL}"/>`,
+  bar:(x,y,c)=>`<g transform="rotate(-10 ${x} ${y})"><rect x="${x-17}" y="${y-12}" width="34" height="12" rx="2" fill="${c}" stroke="${E}"/><path d="M${x-17} ${y-12} l-3 6 l3 6 M${x+17} ${y-12} l3 6 l-3 6" fill="${c}" stroke="${E}"/><rect x="${x-9}" y="${y-9}" width="18" height="6" rx="1.5" fill="${LBL}"/></g>`,
+  tweezers:(x,y)=>`<g transform="rotate(-30 ${x} ${y})"><path d="M${x-2} ${y} L${x-4} ${y-36} M${x+2} ${y} L${x+4} ${y-36}" stroke="#AAB0B5" stroke-width="3" stroke-linecap="round"/></g>`,
+  pie:(x,y,c)=>`<path d="M${x-16} ${y} l2 -14 h28 l2 14 Z" fill="#C98A45" stroke="${E}"/><ellipse cx="${x}" cy="${y-14}" rx="14" ry="5" fill="${c}" stroke="${E}"/><path d="M${x-14} ${y-14} q2 -3 4 0 q2 -3 4 0 q2 -3 4 0 q2 -3 4 0 q2 -3 4 0 q2 -3 4 0 q2 -3 4 0" stroke="#B87F35" stroke-width="1.5" fill="none"/>`,
+  candle:(x,y,c)=>`<rect x="${x-8}" y="${y-26}" width="16" height="26" rx="2" fill="${c}" stroke="${E}"/><path d="M${x} ${y-26} v-5" stroke="#333" stroke-width="1.5"/><path d="M${x} ${y-42} q-5 6 0 11 q5 -5 0 -11 Z" fill="#F6B13B"/>`,
+  generic_fruit:(x,y,c,_,s)=>{ const r=9+s%4, c2=['#6DBE5A','#D6544F','#F2A93B','#F2D04B'][s%4]; return `<circle cx="${x-5}" cy="${y-r}" r="${r}" fill="${c2}" stroke="${E}"/><circle cx="${x+7}" cy="${y-r+2}" r="${r-2}" fill="${c}" stroke="${E}"/><path d="M${x-5} ${y-2*r} q2 -5 5 -6" stroke="#5B3A1E" stroke-width="2" fill="none"/>`; },
 };
 // name keyword -> [drawing, colour]. Order matters: first match wins. Keep specific words before general ones.
 const BY_NAME = [
+  ['sugar snap', D.pod, '#6DBE5A'],
+  ['strawberry jam', D.jar, '#C8102E'], ['veggie straw', D.crisps, '#6DBE5A'], ['strawberr', D.strawberry], ['straws|cocktail stick', D.skewers], ['coconut milk drink', D.carton, '#F1ECE2'], ['rice pudding pot|porridge pot|chocolate mousse', D.dessert, '#8B5A2B'],
+  ['fish cake|fish finger', D.meatballs, '#C98A45'], ['cake candle|birthday candle|scented candle|candles|tea light', D.candle, '#F6EFE6'], ['cake decoration', D.shaker],
+  ['lemon and ginger|peppermint tea', D.teabox, '#F6D33C'], ['wrapping paper|gift wrap', D.card, '#B57BD1'], ['dishwasher salt|bath salt', D.bag, '#CDE8F7'],
+  ['marshmallows hot chocolate', D.jar, '#8B5A2B'], ['stuffed pepper', D.pepper, '#E0432E'], ['peppers', D.pepper, '#E0432E'], ['hot pepper sauce', D.sauce, '#C8463F'], ['salted butter', D.butter],
+  // ---- precise phrases first: these stop a loose word further down from grabbing the wrong item ----
+  ['apple juice|orange juice|grapefruit juice|pineapple juice|tomato juice|coconut water|lemon squash|orange squash|blackcurrant squash|summer fruits squash|lime cordial|roses lime', D.juice, '#F2A93B'],
+  ['lemon juice|lime juice|bottled lemon', D.smallbottle, '#F6D33C'], ['apple sauce|mango chutney|apricot jam|raspberry jam|cherry jam|strawberry jam|lemon curd|mint jelly|onion chutney|lime pickle|preserved lemon|glace cherr|cranberry sauce|pickled|silverskin|mincemeat|almond butter|cashew butter|biscoff spread|black bean sauce|rose harissa|sun dried tomatoes|crispy chilli oil|chilli paste|chilli con carne sauce|tomato and basil sauce|lasagne sauce|curry sauce|curry paste|thai green|thai red|pasta sauce|pasta bake sauce|cheese sauce|butter chicken sauce|baby food jar|coffee mate|coffee creamer|malted milk drink|drinking chocolate', D.jar, '#C8463F'],
+  ['apple cider vinegar|rice vinegar|avocado oil|chilli oil|chilli olive oil|cod liver oil|fish oil', D.oil, '#D9A05B'], ['apple cider|pear cider|cans of beer', D.beer, '#7FB25A'],
+  ['appletiser|iced coffee|iced tea|fanta orange|lilt|cream soda|ginger beer|ginger ale|old jamaica|lemonade|cloudy lemonade|bitter lemon|dr pepper|cans of pop|gin and tonic can|premixed can|cocktails can', D.can2, '#F2893B'],
+  ['southern comfort|spiced rum|brandy', D.spirit, '#C98A45'], ['boxed wine', D.box, '#6B1E2E', 36], ['roses', D.flowers],
+  ['pain aux raisins|cinnamon swirl|croissant dough|frozen croissant|croissant', D.croissant], ['frozen dessert|frozen gateau|frozen profiterole|arctic roll|frozen yoghurt|frozen cheesecake', D.icecream, '#F2B5C4'],
+  ['frozen samosa|spring roll wrapper|wonton wrapper', D.box, '#F1ECE2', 20], ['spring roll|pierogi', D.samosa, '#E0A857'], ['sausage roll|steak bake', D.pasty],
+  ['almond extract|peppermint extract|vanilla pod', D.extract, '#5A3A28'], ['crunchy nut|golden nugget|nutri grain|honey cheerio|honey monster|cinnamon grahams|rice krispies|sugar puffs', D.cereal, '#F2C14E'],
+  ['cereal bar|granola bar|cake bar|jaffa cake bar|flapjack|protein bar', D.bar, '#C98A45'],
+  ['kettle chips|tortilla chip|monster munch|prawn cracker|lentil crisp|salted popcorn|pork scratching|poppadom crisp|banana chip', D.crisps, '#E0A857'],
+  ['salted peanut|chopped nut|chopped hazelnut|pumpkin seed', D.nuts, '#C9A66B'], ['dried apricot|dried mango|desiccated|coconut flake|candied peel', D.driedfruit, '#E0A857'],
+  ['batter mix|bicarbonate|canderel|sweetener|coffee filter|rice paper|puff pastry|shortcrust|filo|frozen pastry|frozen puff|cake mix|brownie mix|pop tarts|beef stock cube|chicken stock cube|clothes peg|face wipe|pet wipe|water wipe|tin foil|bbq charcoal|disposable bbq|yorkshire pudding mix', D.box, '#E0A857', 30],
+  ['cherry tomatoes tinned|tinned cherr|tinned peach|tinned apricot|tinned mango|mandarin segment|tinned pear|tinned pineapple|pineapple chunk|pineapple ring|tinned carrot|tinned mushroom|mushroom soup|tomato soup|chicken soup|tinned chicken|tinned lentil|tinned potato|rice pudding|tinned custard|ambrosia|custard powder|birds custard|coconut cream|light coconut milk|coconut milk|evaporated milk|condensed milk|dried milk|powdered milk|stewed steak|spaghetti hoop|alphabetti|water chestnut|butter beans|formula milk|first infant milk|follow on milk|toddler milk', D.tin, '#C9A66B'],
+  ['tinned tuna|tuna chunk|tinned salmon|tinned mackerel|corned beef|tinned ham|shoe polish', D.flattin, '#2E5AA8'], ['cherry tomato', D.tomato], ['juniper|cardamom pod|celery salt|celery seed|coriander seed|ground coriander|dried basil|dried parsley|dried thyme|dried rosemary|dried sage|dried mint|dried dill|dried chive|dried tarragon|dried coriander|dried herb|dried bay|frozen herb|mustard seed|mustard powder|black mustard|yellow mustard|pumpkin spice|onion seed|onion powder|onion granule|garlic salt|garlic powder|garlic granule|curry powder|mild curry|medium curry|hot curry|cream of tartar|lemon pepper|chicken seasoning|fish seasoning|steak seasoning|everything bagel|black pepper|ground black|white pepper|peppercorn|pink peppercorn|mixed peppercorn|chilli powder|chilli flake|crushed chilli|dried chilli|cayenne|hot chilli|mild chilli|kashmiri|pepper$', D.spice, '#8B4A2E'],
+  ['salt$|salt flake', D.spice, '#F1F1F1'],
+  ['chocolate mousse|rice pudding pot|porridge pot', D.dessert, '#8B5A2B'], ['chocolate digestive|chocolate hobnob|chocolate chip cookie|milk chocolate digestive|malted milk|custard cream|cream cracker|fig roll|jammie dodger|ginger nut|rich tea|jaffa cake|tunnocks|tea cake|rice cake|corn cake|rice cracker|mini cheddar|cheese cracker|cheese snack|bread stick|breadstick', D.biscuits],
+  ['teacake|scone|fruit scone|burger bun|muffin', D.bun, '#E0B068'], ['muffin case|cake tin liner', D.cupcake, '#fff'], ['milk chocolate|dairy milk', D.chocolate], ['easter egg', D.chocbox, '#6A3FA0'], ['marshmallow', D.sweets],
+  ['doughnut', D.doughnut], ['carrot cake|lemon drizzle|victoria sponge|cheesecake|birthday cake|chocolate cake|fruit cake|cream cake|cake|brownie|swiss roll|mini roll|cherry bakewell', D.cake, '#E0B068'],
+  ['custard tart|bakewell tart|jam tart|mince pie|pork pie|mini pork pie|pies', D.pie, '#E0A857'], ['cake decoration', D.shaker], ['cake candle|birthday candle|scented candle|candles|tea light', D.candle, '#F6EFE6'],
+  ['duck eggs|scotch egg', D.eggbox], ['egg whites', D.carton, '#F6D33C'], ['egg pasta|cannelloni|lasagne sheet', D.pasta], ['egg noodle', D.noodles], ['egg fried rice|grains pouch|pearl barley|rolled oats', D.rice], ['eggplant', D.aubergine],
+  ['chicken liver pate|sour cream and chive|fruit salad|potato salad|pasta salad|coleslaw mix|fresh soup|mash', D.tub, '#F6E7C8'], ['chicken gravy|onion gravy|bread sauce|jelly crystal|miso soup', D.sachet, '#8B5A2B'],
+  ['toilet duck|washing machine cleaner|cream cleaner|micellar', D.bottle, '#5BA4D9', '#fff'], ['limescale', D.spray, '#5BA4D9'], ['chicken feed|hamster food|small animal food|fish food|fish flake|straw', D.bag, '#C9A66B'],
+  ['co codamol', D.pills, '#2E5AA8'], ['cough syrup|gripe water', D.medbottle, '#C98A45'], ['coffee syrup', D.oil, '#8B5A2B'], ['coffee bean', D.bag, '#4A2E1F'],
+  ['fish finger|fish cake|onion bhaji|beef meatball|pork meatball', D.meatballs, '#C98A45'], ['salmon steak|tuna steak|breaded fish|lemon sole', D.fish, '#F0876B'], ['breaded chicken|chicken piece', D.chicken], ['fish pie mix', D.tray, '#9AB7C9'],
+  ['fish sauce|oyster sauce|plum sauce|pomegranate molasses|tartare|sweet chilli|chilli sauce|hot pepper sauce|sweet and sour|mint sauce|salad cream|salad dressing|garlic mayo|garlic sauce|burger sauce|coconut amino', D.sauce, '#C8463F'],
+  ['garlic naan|naan|pitta|wrap|tortilla', D.flatbread, '#EAD3A0'], ['garlic bread|garlic baguette|frozen garlic bread', D.baguette, '#E0B068'], ['garlic paste|lemongrass paste|sun dried tomato paste|ginger paste|ginger and garlic', D.tube, '#C8463F'],
+  ['ginger', D.root, '#D9B98A'], ['lemongrass|lemon grass|kaffir|curry leaves|watercress', D.herbs], ['lemon and ginger|peppermint tea', D.teabox, '#F6D33C'],
+  ['bean sprout|frozen mango|frozen chopped onion|onion ring|frozen roast potato|potato wedge|quorn|mozzarella stick|dried bean|breadcrumb|panko', D.bag, '#E0A857'],
+  ['sweet potato fries', D.fries], ['potato waffle', D.waffle], ['green bean|fine bean|runner bean|broad bean|edamame|frozen edamame', D.pod, '#6DBE5A'],
+  ['grapefruit', D.citrus, '#F28B82'], ['pasta flour|rice flour|bread flour', D.flour, '#2E5AA8'], ['ready to roll icing', D.butter],
+  ['chilli con carne ready meal|cottage pie|macaroni cheese', D.pizza], ['pepperoni', D.tray, '#C8463F'], ['roast beef slice|corned beef slice', D.tray, '#C8463F'],
+  ['buttermilk', D.carton, '#F6EFE6'], ['body butter|shower cream|face cream|night cream|eye cream|hair removal cream|hand cream|foot cream|antiseptic cream|hydrocortisone|bite cream|cold sore|athletes foot|nappy cream|nipple cream', D.creamtub, '#F26B8A'],
+  ['baby pouch|cat pouch|pouches|ellas kitchen', D.pouch, '#F2A93B'], ['cheese triangle|cheese spread', D.triangles, '#5BA4D9'], ['grana padano', D.wedge, '#F6E7A8'], ['mozzarella|buffalo mozzarella', D.ballcheese],
+  ['danish blue', D.bluecheese], ['yoghurt drink', D.smallbottle, '#F26B8A'], ['spray deodorant|body spray|hair spray|roll on deodorant', D.deo, '#2E5AA8'], ['nasal spray', D.bottle, '#5BA4D9', '#fff'],
+  ['throat lozenge', D.sweets], ['nicotine gum', D.medbox, '#D6334A'], ['washing up brush', D.brush, '#6DBE5A'], ['washing up bowl', D.tub, '#5BA4D9'], ['tea towel', D.sponge], ['teats', D.babybottle, '#5BA4D9'],
+  ['wrapping paper|gift wrap', D.card, '#B57BD1'], ['hot water bottle', D.pouch, '#D6334A'], ['bath bomb', D.ball, '#F26B8A'], ['yorkshire pudding', D.bag, '#E0A857'], ['matcha', D.teabox, '#6DBE5A'],
+  ['tamarind paste', D.jar, '#5A3A28'], ['sun dried', D.jar, '#C8463F'],
   // words that would otherwise be caught by a food rule
   ['toilet roll|toilet paper|loo roll|andrex|cushelle', D.roll], ['kitchen roll|kitchen towel|paper towel', D.paper], ['spring roll|sausage roll', D.loaf, '#E0B068'],
   ['cat litter|litter', D.bag, '#AAB0B5'], ['dog food|dog biscuit|pedigree|bakers|chappie', D.petfood, '#D6544F'], ['cat food|felix|whiskas|sheba|gourmet|dreamies|cat treat', D.petfood, '#B57BD1'],
@@ -2729,7 +2934,7 @@ const BY_NAME = [
   ['pesto|passata|curry paste|pickle|chutney|olives|gherkin', D.jar, '#4EA64B'], ['stock|gravy|oxo|bisto', D.box, '#8B5A2B', 30],
   ['cereal|cornflake|weetabix|cheerio|granola|muesli|shreddies|bran', D.cereal, '#F2893B'],
   ['tea|pg tips|yorkshire|tetley|twinings', D.teabox, '#4EA64B'], ['coffee|nescaf|kenco', D.coffee], ['hot chocolate|cocoa|horlicks|ovaltine', D.jar, '#8B5A2B'],
-  ['paprika|cumin|turmeric|cinnamon|oregano|chilli flake|curry powder|garam|spice|mixed herb|nutmeg|ginger|pepper corn|black pepper|salt|seasoning|stock cube', D.jar, '#D6544F', '#5A3A28'],
+  ['paprika|cumin|turmeric|cinnamon|oregano|chilli flake|curry powder|garam|spice|mixed herb|nutmeg|ginger|pepper corn|black pepper|salt|seasoning|stock cube', D.spice, '#B5562E'],
   // snacks & drinks
   ['crisp|pringle|dorito|walker|popcorn|tortilla chip', D.crisps, '#F2893B'], ['chocolate|dairy milk|galaxy|kitkat|twix|mars|snickers|bounty|toblerone', D.chocolate],
   ['biscuit|digestive|hobnob|oreo|custard cream|bourbon|rich tea|jaffa|shortbread|cracker|rice cake|oatcake', D.biscuits], ['sweet|haribo|jelly|gum|mint|lollipop|fudge|toffee', D.sweets],
@@ -2753,18 +2958,118 @@ const BY_NAME = [
   ['nappy|nappies|pampers|huggies|pull up', D.nappies], ['baby wipe|wet wipe', D.box, '#CDE8F7', 26], ['formula|aptamil|cow & gate|sma|baby milk', D.tin, '#5BA4D9', '#fff'], ['baby food|pouch|ella', D.pot, '#F2A93B'],
   ['dog food|dog biscuit|pedigree|bakers|chappie', D.petfood, '#D6544F'], ['dog treat|dentastix|chew|bone', D.bone], ['cat food|felix|whiskas|sheba|gourmet|dreamies|cat treat', D.petfood, '#B57BD1'], ['cat litter|litter', D.bag, '#AAB0B5'],
   ['bird seed|fish food|hamster|rabbit food|hay', D.bag, '#C9A66B'],
+
+  // ---- 2.1.4: everything the first pass left generic ----
+  // fruit & veg
+  ['gooseberr', D.berries, '#9BCB5A'], ['redcurrant', D.berries, '#C8102E'], ['cranberr', D.berries, '#B0203A'], ['lychee', D.berries, '#E06A6A'], ['berries', D.berries, '#6A3FA0'],
+  ['papaya', D.citrus, '#F2893B'], ['passion fruit', D.passion], ['dragon fruit', D.dragonfruit], ['rhubarb', D.rhubarb], ['coconut milk', D.tin, '#F1ECE2'], ['coconut', D.coconut],
+  ['prepared fruit', D.tub, '#F2A93B'], ['little gem', D.lettuce], ['pea shoot|microgreen|cress|fresh herb|cilantro', D.herbs], ['herb pot|pot plant|plant pot', D.plant, '#4EA64B'],
+  ['daffodil', D.flowers], ['parsnip', D.root, '#EADFB4'], ['romanesco', D.broccoli], ['pak choi|bok choy|chinese leaf|chard|cavolo nero|spring green', D.greens, '#4EA64B'],
+  ['artichoke heart', D.jar, '#9BCB5A'], ['artichoke|jerusalem', D.greens, '#7FA35A'], ['celeriac|swede', D.turnip, '#C9A66B'], ['turnip', D.turnip, '#8E4A8B'], ['fennel seed', D.spice, '#9BCB5A'], ['fennel', D.fennel],
+  ['zucchini|marrow', D.cucumber, '#4C9A3C'], ['aubergine|eggplant', D.aubergine], ['mangetout|sugar snap|okra|green bean|runner bean|broad bean|edamame', D.pod, '#6DBE5A'], ['baby corn', D.corn],
+  ['beetroot', D.beet], ['radish', D.radish], ['scotch bonnet sauce', D.sauce, '#F2893B'], ['scotch bonnet', D.pepper, '#F2A93B'],
+  ['stir fry veg|stir fry mix|veg medley|roasting veg|prepared veg|mixed veg', D.bag, '#4EA64B'], ['mash', D.tub, '#F6E27A'],
+  // bakery
+  ['petit pain', D.bun, '#E0B068'], ['ciabatta|focaccia', D.flatbread, '#E0B068'], ['chapati|flatbread', D.flatbread, '#EAD3A0'], ['pikelet|scotch pancake|pancake mix', D.box, '#F6D33C', 30], ['pancake', D.pancakes],
+  ['pain au|danish', D.croissant], ['hot cross', D.bun, '#C98A45'], ['iced bun|belgian bun', D.icedbun], ['cupcake case', D.cupcake, '#fff'], ['cupcake|fairy cake', D.cupcake, '#F2B5C4'],
+  ['eclair', D.eclair], ['waffle', D.waffle], ['soreen|panettone|stollen', D.loaf, '#B87F35'],
+  // meat
+  ['topside|silverside|short rib|oxtail|liver|kidney|venison|rabbit|goat|kebab meat|halal meat', D.steak], ['spare rib|ribs', D.ribs], ['lardon|pancetta', D.tray, '#E58A86'],
+  ['pigs in blanket', D.sausages], ['black pudding|haggis|faggot', D.pudding, '#3B2324'], ['white pudding', D.pudding, '#E8DCC4'], ['quarter pounder', D.burger], ['meatball', D.meatballs, '#8B4A2E'], ['meat feast', D.pizza],
+  // fish
+  ['seafood stick|crab stick', D.tray, '#F0876B'], ['seafood mix', D.prawn], ['scallop', D.scallop], ['mussel|clam|cockle|oyster', D.shell, '#2E3A4A'], ['squid|calamari|octopus', D.squid, '#E7B6C8'],
+  ['crab', D.crab], ['lobster|crayfish', D.lobster], ['kipper|herring', D.fish, '#C9A66B'], ['pollock|basa|sole|sea bream|swordfish|monkfish|halibut|coley|tilapia', D.fish, '#B7C8D3'],
+  // dairy & cheese
+  ['cravendale', D.carton, '#5BA4D9'], ['oatly|alpro', D.carton, '#B9D27A'], ['spread|margarine|clover', D.spread, '#F6E27A'], ['ghee', D.jar, '#F6D33C', '#C8A04B'],
+  ['actimel|yakult', D.smallbottle, '#D6334A'], ['skyr|kefir|yeo valley|muller|activia|petits filous|frube', D.yoghurt, '#5BA4D9'], ['creme fraiche|quark', D.pot, '#fff'],
+  ['dessert|trifle|panna cotta|creme brulee|mousse pot', D.dessert, '#D6334A'],
+  ['gorgonzola|roquefort|danish blue|blue cheese', D.bluecheese], ['burrata', D.ballcheese], ['camembert', D.roundcheese, '#F6F1E4'], ['babybel', D.roundcheese, '#D6334A'], ['dairylea|laughing cow', D.triangles, '#5BA4D9'],
+  ['wensleydale|caerphilly|pecorino|paneer|emmental|manchego|comte|jarlsberg|raclette', D.wedge, '#F6E7A8'],
+  // chilled & frozen
+  ['pate', D.tub, '#C9A66B'], ['samosa', D.samosa, '#E0A857'], ['gyoza|dumpling', D.samosa, '#F1ECE2'], ['falafel', D.meatballs, '#8B6B3E'], ['doughball', D.meatballs, '#F6E7C8'],
+  ['antipasti|kimchi|sauerkraut', D.jar, '#D6544F'], ['tortellini|ravioli|gnocchi', D.pasta], ['pasty|pasties', D.pasty], ['sandwich|meal deal', D.sandwich], ['sushi', D.sushi],
+  ['lunchable|snack pot', D.box, '#F2893B', 22], ['tropicana', D.juice, '#F2A93B'], ['tofu|tempeh', D.tofu], ['cookie dough', D.tub, '#E0B068'], ['lard|suet ball|suet', D.butter],
+  ['ice lolly|lollies|lolly', D.lolly, '#D6334A'], ['sorbet|viennetta', D.icecream, '#F2B5C4'], ['petits pois', D.bag, '#4EA64B'], ['french fries|hash brown|croquette', D.fries], ['scampi', D.bag, '#E0A857'],
+  // spices
+  ['herbes de provence|italian herb|marjoram|bay lea|dried herb|herbs', D.spice, '#6E8B3D'],
+  ['clove|allspice|cayenne|tandoori|ras el hanout|baharat|zaatar|sumac|dukkah|cardamom|star anise|fenugreek|nigella|caraway|poppy seed|sesame|saffron|juniper|asafoetida|galangal|msg|season all|gochugaru', D.spice, '#B5562E'],
+  ['herb paste', D.tube, '#4EA64B'],
+  // pasta, rice, tins, sauces
+  ['linguine|fettuccine|rigatoni|farfalle|conchiglie|orzo', D.pasta], ['vermicelli|supernoodle', D.noodles], ['uncle ben|polenta|freekeh|buckwheat|millet', D.rice],
+  ['sardine|anchov|pilchard', D.flattin, '#2E5AA8'], ['spam', D.flattin, '#2E5AA8'], ['chickpea|jackfruit|bamboo shoot|palm heart|minestrone|fruit cocktail|carnation|ackee|callaloo', D.tin, '#C9A66B'],
+  ['jalapeno|capers|piccalilli|cranberry sauce', D.jar, '#6DBE5A'],
+  ['hellmann', D.sauce, '#F6EFC8'], ['horseradish|seafood sauce|thousand island|caesar|french dressing|dressing', D.sauce, '#F6EFC8'], ['barbecue', D.sauce, '#4A2E1F'],
+  ['hot sauce|sriracha|tabasco|franks|peri peri|nandos|jerk sauce', D.hotsauce || D.sauce, '#D6334A'],
+  ['hoisin|oyster sauce|tamari|teriyaki|lea and perrins|kecap|coconut amino', D.sauce, '#4A2E1F'],
+  ['gochujang|miso|tikka paste|korma paste|chipotle paste|laksa|tamarind|harissa|tahini|sambal', D.jar, '#C8463F'],
+  ['bolognese|dolmio|arrabbiata|carbonara|white sauce|korma|tikka masala|jalfrezi|rogan josh|balti|madras|chow mein|stir fry sauce|fajita sauce|enchilada sauce|chipotle sauce|jerk marinade', D.jar, '#E0432E', '#C8A04B'],
+  ['casserole mix|sauce mix|colmans|gravy granule', D.sachet, '#F2A93B'], ['bouillon|marigold', D.tub, '#6E8B3D'], ['stuffing|paxo|crouton', D.box, '#E0A857', 30], ['fry light', D.spray, '#6E8B3D'], ['balsamic glaze', D.oil, '#3B2324'],
+  // baking
+  ['cornflour|baking powder|bicarb|stevia', D.box, '#F6EFE6', 28], ['yeast|gelatine|agar|angel delight|instant whip|blancmange', D.sachet, '#D6334A'], ['vanilla|food colouring|gel food', D.extract, '#5A3A28'],
+  ['sprinkle|hundreds and thousand|edible glitter', D.shaker], ['fondant|royal icing|marzipan', D.butter], ['icing pen|writing icing', D.tube, '#F26B8A'],
+  ['mixed peel|desiccated|coconut flake|sultana|currant|mixed fruit', D.driedfruit, '#8B5A2B'], ['treacle', D.treacletin, '#3B2324'],
+  // breakfast, tea, coffee
+  ['frosties|coco pops|shredded wheat|fruit and fibre|special k|weetos|ready brek|krave|lucky charms|oatibix|alpen|oat so simple', D.cereal, '#5BA4D9'],
+  ['breakfast bar|belvita|nature valley|nakd|trek bar|snack bar', D.bar, '#6E8B3D'], ['biscoff spread|vegemite|bovril', D.jar, '#8B5A2B'], ['ryvita', D.biscuits], ['toaster pastr', D.box, '#D6334A', 30],
+  ['typhoo|earl grey|rooibos|chai', D.teabox, '#D6334A'], ['douwe|gold blend|espresso|cappuccino|latte', D.coffee],
+  // world foods
+  ['taco|fajita kit|burrito kit|enchilada kit|old el paso', D.taco], ['nacho', D.crisps, '#F2C14E'], ['poppadom|popadom', D.poppadom], ['bombay mix', D.crisps, '#E0A857'],
+  ['nori|seaweed', D.nori], ['wasabi', D.tube, '#8CC63F'], ['ramen', D.noodles], ['kabanos', D.sausages], ['plantain', D.banana],
+  // snacks
+  ['tyrrell|mccoy|hula hoop|quaver|wotsit|skips|frazzle|discos|squares|wheat crunchies|twiglet|veggie straw|sharing bag', D.crisps, '#D6334A'],
+  ['pretzel', D.pretzel], ['walnut|pecan|hazelnut|trail mix|sunflower seed', D.nuts, '#C9A66B'], ['medjool|dates|prune', D.driedfruit, '#5A3A28'],
+  ['cookie|party ring|garibaldi|viennese|penguin|breakaway|wafer|lotus|biscotti|ritz|tuc|grissini', D.biscuits],
+  ['kit kat|maltesers|twirl|wispa|crunchie|aero|lindt', D.chocolate], ['ferrero|celebrations|heroes|quality street|advent|selection box', D.chocbox, '#6A3FA0'],
+  ['fruit pastille|starburst|skittles|percy pig|midget gem|liquorice|tic tac', D.sweets], ['kids snack|lunchbox snack|fruit winder', D.box, '#F2893B', 24],
+  ['mr kipling|french fancies|battenberg|bakewell|angel slice', D.cake, '#F2B5C4'],
+  // drinks
+  ['robinsons', D.juice, '#F2A93B'], ['capri sun|kids drink', D.pouch, '#F2893B'], ['fruit shoot', D.smallbottle, '#F2893B'], ['shloer', D.wine, '#E7A0B0'],
+  ['vimto|rubicon|dandelion|fizzy|mixers|relentless|boost|prime|sports drink|powerade|gatorade|j2o|fentimans|kombucha|oasis', D.can2, '#6A3FA0'],
+  ['bulmers|rekorderlig|thatchers|magners|somersby', D.beer, '#7FB25A'], ['bitter|stout|ipa|carlsberg|fosters|coors|madri|birra moretti|san miguel|kronenbourg|brewdog|camden|shandy', D.beer, '#D4A030'],
+  ['port|sherry', D.wine, '#5A1E2E'], ['scotch|cognac|amaretto|kahlua|cointreau|martini|vermouth|sambuca|jagermeister|disaronno', D.spirit, '#C98A45'],
+  ['hard seltzer|wkd|smirnoff ice|alcopop', D.can2, '#5BA4D9'],
+  // household
+  ['plenty', D.paper], ['napkin', D.box, '#F6EFE6', 14], ['black bag|recycling bag|compost bag', D.binbags], ['food bag|zip lock|baking parchment', D.box, '#AAB0B5', 24], ['food container|lunch bag', D.tub, '#CDE8F7'],
+  ['scrubbing brush|dustpan', D.brush, '#5BA4D9'], ['rubber glove|gloves', D.gloves, '#F6D33C'], ['non bio|stain remover|vanish|colour catcher|dryer sheet', D.box, '#F26B8A', 34],
+  ['toilet block|disinfectant|zoflora|descaler|drain|mould|bar keepers', D.bottle, '#5BA4D9', '#fff'], ['steel wool|duster', D.sponge], ['reed diffuser|diffuser', D.diffuser],
+  ['charcoal|kindling|logs', D.logs], ['extension lead|fuse|hoover bag|vacuum bag|ant powder|mouse trap|slug pellet|blu tack', D.box, '#3A3F44', 26], ['superglue', D.tube, '#D6334A'],
+  ['sellotape|parcel tape|duct tape|tape|string|elastic band', D.tape, '#C9A66B'], ['envelope|stamps', D.envelope], ['birthday card|greeting card|card', D.card, '#F26B8A'], ['gift bag', D.bag, '#B57BD1'],
+  ['pens|pen', D.pens], ['notebook|printer paper', D.notebook, '#2E5AA8'], ['mop', D.mop], ['plant food', D.bottle, '#4EA64B'], ['compost', D.bag, '#5A3A28'],
+  ['paper plate|paper cup|plastic cup|party suppl', D.cup, '#5BA4D9'], ['balloon', D.balloons], ['straw|cocktail stick|skewer', D.skewers],
+  // toiletries
+  ['head and shoulders|hair mask|radox|original source|travel size', D.pump, '#2E5AA8'], ['aquafresh|teeth whitening', D.tube, '#D6334A'], ['mitchum|hairspray|hair gel|hair wax', D.deo, '#3A3F44'],
+  ['perfume|aftershave balm|aftershave', D.perfume, '#B57BD1'], ['cetaphil|e45|simple|cerave|factor 50|fake tan|self tan|face wash|facial cleanser|toner|exfoliator|make up remover', D.pump, '#F6EFE6'],
+  ['wax strip|veet', D.box, '#F26B8A', 22], ['tweezer|nail clipper|nail file', D.tweezers], ['face mask', D.sachet, '#5BA4D9'],
+  ['lip balm|vaseline|lip gloss', D.lipbalm, '#F26B8A'], ['lipstick', D.lipstick, '#C8102E'], ['mascara|eyeliner|concealer', D.mascara, '#222'], ['foundation|blusher|bronzer', D.compact, '#E8B898'],
+  ['make up brush', D.mascara, '#F2B5C4'], ['nail varnish remover', D.bottle, '#F26B8A', '#fff'], ['nail varnish', D.nailpolish, '#C8102E'], ['mousse', D.deo, '#F26B8A'],
+  ['hair tie|hair bobble|hair clip|kirby grip', D.hairties], ['hairbrush', D.hairbrush, '#B57BD1'], ['nit comb|comb', D.comb, '#3A3F44'], ['hair dye|root touch up', D.box, '#8B4A2E', 36],
+  ['period pant|menstrual cup|tena', D.box, '#B57BD1', 26], ['hand sanitiser|hand gel', D.pump, '#6DBE5A'],
+  // health
+  ['cough medicine|benylin', D.medbottle, '#C98A45'], ['lockets|halls|tunes', D.sweets], ['ice pack', D.sachet, '#5BA4D9'], ['thermometer', D.thermometer], ['reading glasses', D.glasses], ['vape', D.vape],
+  ['vicks|savlon|germolene|tiger balm|deep heat|sudocrem|metanium|bepanthen|teething gel', D.creamtub, '#5BA4D9'], ['insect repellent|deet', D.spray, '#6DBE5A'],
+  ['multivitamin|folic|omega|magnesium|zinc|probiotic|berocca|dioralyte|rehydration', D.vitamins, '#F2893B'], ['protein powder', D.tub, '#3A3F44'],
+  ['painkiller|beechams|day nurse|night nurse|loratadine|cetirizine|antacid|imodium|laxative|senna|sleep aid|nytol|decongestant', D.pills, '#2E5AA8'],
+  ['contact lens solution|ear drop', D.bottle, '#5BA4D9', '#fff'], ['contact lens|ear plug|condom|lube|pregnancy test|ovulation test|nicotine|verruca|head lice|covid test|medical|teething granule|flea|wormer|frontline', D.medbox, '#D6334A'],
+  // baby
+  ['cow and gate', D.tin, '#5BA4D9', '#fff'], ['baby snack|puffs|rusk|toddler snack|organix', D.box, '#F6D33C', 28], ['baby bath|baby powder|infacol|dentinox|milton', D.bottle, '#CDE8F7', '#fff'],
+  ['baby bottle|bottles|sippy cup', D.babybottle, '#5BA4D9'], ['dumm', D.dummy, '#5BA4D9'], ['bibs|bib|muslin', D.bib, '#F2B5C4'], ['baby spoon', D.skewers],
+  // pets
+  ['puppy food|cesar|kitten food|go cat|guinea pig food', D.petfood, '#F2893B'], ['bonio', D.bone], ['poo bag', D.poobags], ['dog toy|cat toy', D.ball, '#D6334A'],
+  ['bird food|fat ball|mealworm|sawdust|pet bedding', D.bag, '#C9A66B'],
+  // last: short words that would wrongly catch longer names if they went earlier
+  ['ice cube|ice', D.icebag], ['pop', D.can2, '#D6334A']
 ];
 const BY_NAME_RE = BY_NAME.map(([k, f, c, x]) => [new RegExp('(^|\\s)(' + k + ')', 'i'), f, c, x]);
-function produceSvg(name, x, y, s, edge){ return D.generic_fruit(x, y, '#6DBE5A', s); }
+function produceSvg(name, x, y, s, edge){ return D.generic_fruit(x, y, '#6DBE5A', undefined, s); }
 
 function packageSvg(it, x, newId){
   const cat = categoryFor(it.name), shape = SHAPES[cat] || 'box', s = seedOf(it.id);
   const col = GOOD_COLOURS[cat] || '#F5A524', y = FLOOR, f = fold(it.name);
   let d = '';
-  for (const [re, fn, c, extra] of BY_NAME_RE) { if (re.test(f)) { d = fn(x, y, c || col, extra !== undefined ? extra : s); break; } }
+  for (const [re, fn, c, extra] of BY_NAME_RE) { if (re.test(f)) { d = fn(x, y, c || col, extra, s); break; } }
   if (!d) switch (shape) {
-    case 'fruit': d = D.generic_fruit(x, y, col, s); break;
-    case 'bread': d = s % 2 ? D.baguette(x, y, col, s) : D.loaf(x, y, col); break;
+    case 'fruit': d = D.generic_fruit(x, y, col, undefined, s); break;
+    case 'bread': d = s % 2 ? D.baguette(x, y, col, undefined, s) : D.loaf(x, y, col); break;
     case 'carton': d = s % 3 === 0 ? D.eggbox(x, y) : D.carton(x, y, ['#5BA4D9','#D6544F','#6DBE5A'][s % 3]); break;
     case 'wine': d = D.wine(x, y, col); break;
     case 'bottle': d = D.bottle(x, y, col); break;
@@ -2772,6 +3077,7 @@ function packageSvg(it, x, newId){
     case 'pump': d = D.pump(x, y, col); break;
     case 'tin': d = D.tin(x, y, col); break;
     case 'jar': d = D.jar(x, y, col); break;
+    case 'spice': d = D.spice(x, y, ['#B5562E','#D6544F','#6E8B3D','#E0A857','#8B4A2E'][s % 5]); break;
     case 'crisps': d = D.crisps(x, y, col); break;
     case 'bag': d = D.bag(x, y, col); break;
     case 'tray': d = D.tray(x, y, col); break;
@@ -2917,6 +3223,35 @@ function openTrolleySheet(refresh){
     sheet.scrollTop = top;
   } else openSheet(html, { type:'trolley' });
 }
+// Slide a section row left to reveal Delete.
+let secSwipe = null;
+const closeSwipes = except => sheet.querySelectorAll('.secrow.swipe.open').forEach(r => { if (r !== except) { r.classList.remove('open'); r.querySelector('.slide').style.transform = ''; } });
+sheet.addEventListener('pointerdown', e => {
+  const slide = e.target.closest('.secrow.swipe .slide'); if (!slide) { if (!e.target.closest('.swipe-del')) closeSwipes(); return; }
+  const row = slide.parentElement; closeSwipes(row);
+  secSwipe = { row, slide, x0:e.clientX, y0:e.clientY, base:row.classList.contains('open') ? -92 : 0, dx:0, active:false };
+});
+sheet.addEventListener('pointermove', e => {
+  const sw = secSwipe; if (!sw) return;
+  const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
+  if (!sw.active) { if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { secSwipe = null; return; } if (Math.abs(dx) < 10) return; sw.active = true; sw.row.classList.add('dragging'); }
+  sw.dx = dx;
+  sw.slide.style.transform = `translateX(${Math.max(-110, Math.min(0, sw.base + dx))}px)`;
+});
+const endSecSwipe = () => {
+  const sw = secSwipe; secSwipe = null; if (!sw || !sw.active) return;
+  sw.row.classList.remove('dragging');
+  const pos = sw.base + sw.dx, open = pos < -46;
+  sw.row.classList.toggle('open', open);
+  sw.slide.style.transform = open ? 'translateX(-92px)' : '';
+  // a swipe must not also count as a tap on the buttons under the finger
+  const block = ev => { ev.stopPropagation(); ev.preventDefault(); };
+  sw.slide.addEventListener('click', block, { capture:true, once:true });
+  setTimeout(() => sw.slide.removeEventListener('click', block, { capture:true }), 400);
+};
+sheet.addEventListener('pointerup', endSecSwipe);
+sheet.addEventListener('pointercancel', () => { if (secSwipe) { secSwipe.row.classList.remove('dragging'); secSwipe.slide.style.transform = secSwipe.base ? 'translateX(-92px)' : ''; secSwipe = null; } });
+
 // Tapping an item inside the trolley puts it back on the list.
 sheet.addEventListener('click', e => {
   if (!sheetCtx || sheetCtx.type !== 'trolley') return;

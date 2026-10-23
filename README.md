@@ -7,7 +7,7 @@ Live at **https://list-sharing.web.app**
 ## Using it
 
 - **Add**: type in the box at the top. About 2,400 UK groceries are built in, and spelling mistakes are fine ("origano" finds Oregano). Things you've added before rank first. Add a quantity with "Chicken x4" or "4x chicken".
-- **Shops**: tap **+ Add** at the end of the tabs. Supermarkets start with 24 aisles in walking order (Fruit & veg, Bakery, Meat & poultry, Fish & seafood, Dairy & eggs, Cheese, Chilled & deli, Frozen, Herbs & spices, Pasta, rice & grains, Tins & jars, Sauces & condiments, Baking, Breakfast & spreads, Tea & coffee, World foods, Snacks & sweets, Soft drinks, Beer, wine & spirits, Household, Toiletries & beauty, Health & medicine, Baby, Pets). Items file themselves into the right aisle. Any other shop, and every shared list, gets aisles on its own as things are added. The List tab groups by aisle too. Empty aisles stay hidden, and an aisle you delete stays deleted.
+- **Shops**: tap **+ Add** at the end of the tabs. Supermarkets start with 24 aisles in walking order (Fruit & veg, Bakery, Meat & poultry, Fish & seafood, Dairy & eggs, Cheese, Chilled & deli, Frozen, Herbs & spices, Pasta, rice & grains, Tins & jars, Sauces & condiments, Baking, Breakfast & spreads, Tea & coffee, World foods, Snacks & sweets, Soft drinks, Beer, wine & spirits, Household, Toiletries & beauty, Health & medicine, Baby, Pets). Items file themselves into the right aisle. Any other shop, and every shared list, gets aisles on its own as things are added. The List tab groups by aisle too. Empty aisles stay hidden, and an aisle you delete stays deleted. To delete an aisle, open the shop's settings and slide it to the left, then tap Delete.
 - **Move things around**: hold an item to send it to another shop, change its aisle or quantity, rename it or remove it. Hold the handle on the right for a moment, then drag to reorder. Whatever you change is remembered next time.
 - **Tick off**: tap an item and it drops into the trolley at the bottom of the screen. Swipe up on the trolley (or tap it) to see what's in it. Tap anything you put back to return it to the list. **Empty the trolley** clears it when you've finished. It needs two taps, and there's an Undo.
 - **Tabs at the top**: Settings > **Tabs at the top**, or long-press the List tab. Switch any tab off, including List, and reorder the rest. Hidden shops keep their items and still appear when you hold an item to send it somewhere.
@@ -18,6 +18,7 @@ Live at **https://list-sharing.web.app**
 ## Sharing a list
 
 - **Create**: **+ Add** > **New shared list**. Shared tabs show a small cloud.
+- **Share a list you already have**: open it and tap the Share button (or its settings), then **Share this list live**. It keeps its tab, items and aisles, and gets a code to share.
 - **Share it**: open the list, tap **•••** > **Share code**. It shows a QR code and a code like `TRLY-7K2M-Q9RD-4XNP-W8TA`.
 - **Join, in the same room**: on the other phone, **+ Add** > **Join a shared list** > **Scan their code**. Scan from inside the app, not with the Camera app, because iPhone opens Camera links in Safari.
 - **Join from a message**: the **Send** button writes a message containing the code. The other person copies the whole message, then taps **+ Add** > **Join a shared list** > **Paste a code**.
