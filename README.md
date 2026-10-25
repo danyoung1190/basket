@@ -23,6 +23,8 @@ Live at **https://list-sharing.web.app**
 - **Join, in the same room**: on the other phone, **+ Add** > **Join a shared list** > **Scan their code**. Scan from inside the app, not with the Camera app, because iPhone opens Camera links in Safari.
 - **Join from a message**: the **Send** button writes a message containing the code. The other person copies the whole message, then taps **+ Add** > **Join a shared list** > **Paste a code**.
 
+On shared lists, things other people added show their name in small grey letters, and anything added on another phone since you last opened the app has a small **New** tag. Your name is set from the prompt at the top of a shared list, or in Settings.
+
 Changes appear on the other phones within a second or two. With no signal, changes wait and send later.
 
 ## Moving lists to another phone, or from the old address

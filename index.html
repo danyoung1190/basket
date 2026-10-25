@@ -134,6 +134,12 @@ main{max-width:640px; margin:0 auto}
 .item.done .name{color:var(--muted); text-decoration:line-through}
 .item.ticking .name{color:var(--muted)}
 .item .hint{margin-right:2px}
+.namebar{display:flex; align-items:center; gap:6px}
+.namebar span{flex:1}
+.linkbtn{flex:none; border:0; background:none; color:var(--accent); font:600 15px var(--ui); padding:6px 4px}
+.item .by{flex:none; max-width:30%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:var(--muted); margin:0 2px 0 6px}
+.item .newtag{flex:none; padding:2px 6px; border-radius:7px; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); font:700 11px/1.2 var(--ui); letter-spacing:.02em; margin-left:6px}
+@media (prefers-color-scheme:dark){ .item .newtag{background:color-mix(in srgb, var(--accent) 30%, transparent); color:#fff} }
 .item.done .hint{display:none}
 .grip{
   flex:none; width:50px; align-self:stretch; display:grid; place-items:center;
@@ -407,7 +413,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -521,6 +527,13 @@ function load(){
 }
 
 let state = load();
+// Which phone this is. Kept outside the list data so a backup or move to another phone never copies it.
+const DEV = (() => { try { let d = localStorage.getItem('trolley.device'); if (!d) { d = uid().replace(/-/g, '').slice(0, 12); localStorage.setItem('trolley.device', d); } return d; } catch(e) { return 'nostore'; } })();
+const myName = () => clean(state.me || '').slice(0, 24);
+// "New" means added on another phone since she last had the app open.
+// Kept in its own key: going into the background must never rewrite the list itself.
+const SEEN_KEY = 'trolley.seen';
+let seenCutoff = +(safeGet(SEEN_KEY) || 0) || Date.now();
 let askedPersist = false;
 function save(){
   if (typeof noteSharedChanges === 'function') noteSharedChanges();
@@ -806,6 +819,7 @@ function addItem(raw, opts){
   if (same) {
     if (same.done) {
       same.done = false; same.doneAt = null; same.updatedAt = Date.now();
+      same.addedAt = Date.now(); same.addedDev = DEV; same.addedBy = myName() || null;
       if (qty) same.qty = qty;
       touchHistory(same.name);
       if (opts.quiet) return true;
@@ -826,7 +840,7 @@ function addItem(raw, opts){
   }
   const shop = shopById(shopId);
   const sectionId = placeFor(name, shop);
-  const item = { id:uid(), name, qty: qty || 1, shopId, sectionId, done:false, doneAt:null,
+  const item = { id:uid(), name, qty: qty || 1, shopId, sectionId, done:false, doneAt:null, addedDev:DEV, addedBy:myName() || null,
     order:nextOrder(shopId), addedAt:Date.now(), updatedAt:Date.now() };
   state.items.push(item);
   touchHistory(name, shop ? { shopId, sectionId } : null);
@@ -916,6 +930,7 @@ function moveItem(id, shopId){
   }
   it.shopId = target ? target.id : null;
   it.sectionId = placeFor(it.name, target);
+  if (isShared(target)) stampAdded(it);
   it.order = nextOrder(it.shopId);
   it.updatedAt = Date.now();
   rememberPlace(it);
@@ -997,6 +1012,7 @@ function sortAll(){
     if (dupIn(it, shop.id)) { state.items = state.items.filter(i => i !== it); return; }
     it.shopId = shop.id;
     it.sectionId = placeFor(it.name, shop);
+    if (isShared(shop)) stampAdded(it);
     it.order = nextOrder(shop.id);
     it.updatedAt = Date.now();
   });
@@ -1081,8 +1097,15 @@ function renderTabs(){
       + (t.isList ? '' : '<span class="tdot"></span>')
       + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}${t.shared ? ICON_CLOUD : ''}</button>`;
   }).join('') + '<button type="button" class="tab add" data-act="addMenu">+ Add</button>';
+  // Bring the active tab into view sideways only. scrollIntoView would also scroll the page up to the
+  // tabs on every redraw, which threw her back to the top of the list after each tick.
   const active = tabsEl.querySelector('.tab.active');
-  if (active && active.scrollIntoView) active.scrollIntoView({ block:'nearest', inline:'nearest' });
+  if (active && renderTabs.last !== state.tab) {
+    renderTabs.last = state.tab;
+    const l = active.offsetLeft, r = l + active.offsetWidth;
+    if (l < tabsEl.scrollLeft) tabsEl.scrollLeft = l - 16;
+    else if (r > tabsEl.scrollLeft + tabsEl.clientWidth) tabsEl.scrollLeft = r - tabsEl.clientWidth + 16;
+  }
 }
 
 function renderHeader(){
@@ -1099,9 +1122,20 @@ function renderHeader(){
   addInput.placeholder = shop ? `Add to ${shop.name}` : 'Add to your list';
 }
 
+// Arriving on a shared list counts as "added" by whoever put it there, so the other phone sees it as New.
+function stampAdded(it){ it.addedAt = Date.now(); it.addedDev = DEV; it.addedBy = myName() || null; }
+const byOther = i => !!i.addedDev && i.addedDev !== DEV;
+// Not New: anything already there when she joined the list.
+const isNewItem = i => { if (i.done || !byOther(i)) return false; const sh = shopById(i.shopId);
+  return isShared(sh) && (i.addedAt || 0) > Math.max(seenCutoff, sh.shared.joinedAt || 0); };
 function itemRow(i, opts){
   const done = i.done;
   let hint = '';
+  // Shared lists: a quiet "who added it", and a New tag for things added on another phone since she last looked.
+  if (!done && isShared(shopById(i.shopId))) {
+    if (isNewItem(i)) hint += '<span class="newtag">New</span>';
+    if (byOther(i) && i.addedBy) hint += `<span class="by">${esc(i.addedBy)}</span>`;
+  }
   if (opts.showUsual) {
     const us = usualShop(i.name);
     if (us) hint = `<span class="hint" style="--c:${us.color}">${esc(us.name)}</span>`;
@@ -1152,6 +1186,10 @@ function renderList(){
     else if (undone.length && !state.shops.length) bar = '<p class="tip">Add your shops with + Add, then hold an item to send it there.</p>';
     else if (undone.length && !state.items.some(i => i.shopId)) bar = '<p class="tip">Hold an item to send it to a shop. Drag the handle to reorder.</p>';
   }
+  if (isShared(shop) && !myName() && !state.nameAsked)
+    bar = '<p class="tip namebar"><span>Add your name so others can see who added what.</span>'
+      + '<button type="button" class="linkbtn" data-act="askName">Add name</button>'
+      + `<button type="button" class="mini" data-act="nameLater" aria-label="Not now">${ICON_X}</button></p>`;
   sortBar.innerHTML = bar;
 
   if (!items.length) {
@@ -1432,6 +1470,8 @@ document.addEventListener('click', e => {
   if (!b || b.closest('#sheet') || b.closest('#toast') || b.closest('#tabs')) return;
   if (b.dataset.act === 'clearTicked') clearTicked();
   else if (b.dataset.act === 'sortAll') sortAll();
+  else if (b.dataset.act === 'askName') maybeAskName();
+  else if (b.dataset.act === 'nameLater') { state.nameAsked = true; save(); render(); }
   else if (b.dataset.act === 'addShop') openAddShop({});
   else if (b.dataset.act === 'addMenu') openAddMenu();
   else if (b.dataset.act === 'joinStart') openJoinShared('');
@@ -1824,6 +1864,7 @@ function openSettings(){
     + '<h3 class="sh-label">Sharing</h3>'
     + (sharingWarning() ? '<p class="note err">Sharing needs attention. Open Shared lists for details.</p>' : '')
     + `<button type="button" class="btn wide" style="margin-top:0" data-act="shareHub">Shared lists${sharedShops().length ? ` (${sharedShops().length})` : ''}</button>`
+    + `<button type="button" class="btn wide" data-act="askName">Your name: ${myName() ? esc(myName()) : 'not set'}</button>`
     + (sharingConfigured() ? '<h3 class="sh-label">Moving</h3><button type="button" class="btn wide" style="margin-top:0" data-act="movePaste">Bring lists from another phone or address</button>'
        + '<button type="button" class="btn wide" data-act="moveStart">Send my lists to another phone or address</button>' : '')
     + `<h3 class="sh-label">Recently removed and cleared</h3>${remHtml}`
@@ -1835,6 +1876,11 @@ function openSettings(){
 sheet.addEventListener('submit', async e => {
   e.preventDefault();
   const form = e.target, kind = form.dataset.form;
+  if (kind === 'myName') {
+    state.me = clean(form.querySelector('input').value).slice(0, 24); save(); closeSheet(); render();
+    toast(state.me ? `Others will see "${state.me}"` : 'Name cleared');
+    return;
+  }
   if (kind === 'prompt') { runPrompt(form.querySelector('input').value); return; }
   if (kind === 'move') {
     const id = parseMoveCode(form.querySelector('input.code').value);
@@ -1975,6 +2021,7 @@ sheet.addEventListener('click', e => {
     case 'joinStart': openJoinShared(''); break;
     case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
     case 'makeShared': if (shop) makeShared(shop, b); break;
+    case 'askName': maybeAskName(); break;
     case 'promptDelete':
       if (!promptDel) break;
       if (b.dataset.armed) { const f = promptDel; promptDel = null; f(); }
@@ -2220,7 +2267,8 @@ function fbErrorText(e){
 
 /* Local <-> Firestore */
 const sharedItemFields = i => ({ id:i.id, name:i.name, qty:clampQty(i.qty), sectionId:i.sectionId || null, done:!!i.done,
-  doneAt:i.doneAt || null, order:i.order || 0, addedAt:i.addedAt || 0, updatedAt:i.updatedAt || 0 });
+  doneAt:i.doneAt || null, order:i.order || 0, addedAt:i.addedAt || 0, updatedAt:i.updatedAt || 0,
+  addedBy:i.addedBy ? String(i.addedBy).slice(0, 24) : null, addedDev:i.addedDev ? String(i.addedDev).slice(0, 16) : null });
 const itemSig = i => JSON.stringify(sharedItemFields(i));
 const metaOf = shop => ({ name:shop.name, color:shop.color, sections:shop.sections, noAisles:!!shop.noAisles, skipAisles:shop.skipAisles || [] });
 const live = new Map(); // listId -> { shop, known:Map(itemId->sig), metaSig, unsubs:[], fromCache, pending, ready }
@@ -3382,6 +3430,14 @@ async function importMove(id){
 function finishMove(id){ if (fb) fb.fs.deleteDoc(transferRef(id)).catch(() => {}); }
 
 /* ---------- First run ---------- */
+// Others on a shared list see this next to what she adds. Asked once; Settings can change it.
+function maybeAskName(){
+  state.nameAsked = true; save(); render();
+  openSheet('<h2>What should others see?</h2><p class="sub">People you share a list with will see this, in small grey letters, next to things you add.</p>'
+    + `<form class="prompt-form" data-form="myName" autocomplete="off"><input class="field" type="text" maxlength="24" enterkeyhint="done" autocapitalize="words" placeholder="Your name" value="${esc(myName())}" aria-label="Your name">`
+    + '<button type="submit" class="btn primary">Save</button></form>'
+    + '<button type="button" class="btn wide" data-act="cancel">Not now</button>', { type:'myName' });
+}
 function maybeWelcome(){
   if (state.welcomed) return;
   const empty = !state.items.length && !state.shops.length && !Object.keys(state.history).length;
@@ -3432,6 +3488,13 @@ render();
 })();
 startSharing();
 setTimeout(maybeWelcome, 300);
+let hiddenAt = 0;
+function noteHidden(){ hiddenAt = Date.now(); safeSet(SEEN_KEY, String(hiddenAt)); }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') noteHidden();
+  else if (hiddenAt && Date.now() - hiddenAt > 60000) { seenCutoff = hiddenAt; render(); } // back after a minute away: last visit's view counts as seen
+});
+window.addEventListener('pagehide', noteHidden);
 if (loadWarning) toast(loadWarning);
 </script>
 </body>
