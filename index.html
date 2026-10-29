@@ -468,7 +468,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -2412,6 +2412,8 @@ function subscribe(shop){
     if (!snap.exists()) { if (!snap.metadata.fromCache) L.missing = true; renderSyncState(); return; }
     L.missing = false;
     const v = snap.data() || {};
+    // A meal plan code joined on an older version became a shopping-list tab. Turn it back into the meal plan.
+    if (v.kind === 'meals') { adoptMealPlan(s); return; }
     if (v.name) s.name = String(v.name).slice(0, 80);
     if (v.color) s.color = v.color;
     if (Array.isArray(v.sections)) s.sections = v.sections.filter(x => x && x.id && x.name);
@@ -2423,6 +2425,17 @@ function subscribe(shop){
     render();
     if (healed) noteSharedChanges();
   }, err => { L.error = err; renderSyncState(); }));
+}
+function adoptMealPlan(s){
+  const lid = s.shared.listId;
+  unsubscribe(lid);
+  state.items = state.items.filter(i => i.shopId !== s.id);
+  state.shops = state.shops.filter(x => x.id !== s.id);
+  if (state.tab === s.id) state.tab = 'list';
+  state.mealPlan = { listId:lid, joinedAt:Date.now() };   // she joined this one on purpose, so it wins
+  view = 'meals'; state.view = 'meals';
+  save(); render();
+  toast('That code is your meal plan, so it is in Meals now');
 }
 function resetSharing(){ [...live.keys()].forEach(unsubscribe); startSharing(); }
 function unsubscribe(id){
