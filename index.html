@@ -61,6 +61,7 @@ button:disabled{opacity:.3; cursor:default}
 .tab .tdot{width:8px; height:8px; border-radius:50%; background:var(--c); box-shadow:0 0 0 1.5px rgba(255,255,255,.95)}
 .tab .count{font-weight:500; opacity:.7}
 .tab.add{background:transparent; box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.45)}
+.tab.hiddenpill{box-shadow:none; opacity:.85; font-weight:500}
 .tab.pressing{transform:scale(.96)}
 .titlerow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 16px 0; max-width:640px; margin:0 auto}
 .titlerow > :first-child{min-width:0}
@@ -468,7 +469,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.5.2';
+const APP_VERSION = '2.5.3';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1158,7 +1159,9 @@ function renderTabs(){
     return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${esc(t.id)}" style="--c:${t.color}" aria-current="${active ? 'page' : 'false'}">`
       + (t.isList ? '' : '<span class="tdot"></span>')
       + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}${t.shared ? ICON_CLOUD : ''}</button>`;
-  }).join('') + '<button type="button" class="tab add" data-act="addMenu">+ Add</button>';
+  }).join('') + '<button type="button" class="tab add" data-act="addMenu">+ Add</button>'
+    + (() => { const n = (state.mealsHidden ? 1 : 0) + (state.listHidden ? 1 : 0) + state.shops.filter(x => x.hidden).length;
+        return n ? `<button type="button" class="tab add hiddenpill" data-act="tabsSheet">${n} hidden</button>` : ''; })();
   // Bring the active tab into view sideways only. scrollIntoView would also scroll the page up to the
   // tabs on every redraw, which threw her back to the top of the list after each tick.
   const active = tabsEl.querySelector('.tab.active');
@@ -1404,7 +1407,8 @@ function switchTab(id){
   window.scrollTo(0, 0);
 }
 longPress(tabsEl, '.tab', el => {
-  if (el.dataset.act === 'addMenu') openAddMenu();
+  if (el.dataset.act === 'tabsSheet') openTabsSheet();
+  else if (el.dataset.act === 'addMenu') openAddMenu();
   else if (el.dataset.act === 'addShop') openAddShop({});
   else switchTab(el.dataset.tab);
 }, el => {
@@ -1416,7 +1420,8 @@ longPress(tabsEl, '.tab', el => {
 tabsEl.addEventListener('click', e => {
   if (e.detail !== 0) return; // keyboard activation only; touch and mouse use pointer events
   const el = e.target.closest('.tab'); if (!el) return;
-  if (el.dataset.act === 'addMenu') openAddMenu();
+  if (el.dataset.act === 'tabsSheet') openTabsSheet();
+  else if (el.dataset.act === 'addMenu') openAddMenu();
   else if (el.dataset.act === 'addShop') openAddShop({}); else switchTab(el.dataset.tab);
 });
 
@@ -2143,7 +2148,7 @@ sheet.addEventListener('click', e => {
       break;
     case 'upgradeSections': if (shop) { upgradeSections(shop); openShopSheet(shop.id); } break;
     case 'toggleHide':
-      if (shop && setTabHidden(shop.id, !shop.hidden)) { toast(shop.hidden ? `${shop.name} hidden. Long-press List or open Settings to show it again.` : `${shop.name} is back at the top`); closeSheet(); }
+      if (shop && setTabHidden(shop.id, !shop.hidden)) { toast(shop.hidden ? `${shop.name} hidden. Tap “hidden” at the end of the tabs to bring it back.` : `${shop.name} is back at the top`); closeSheet(); }
       break;
     case 'tabsSheet': openTabsSheet(); break;
     case 'tabToggle': {
@@ -3877,6 +3882,11 @@ async function moveOldMeals(){
   try {
     for (const sh of sharedShops()) {
       const lid = sh.shared.listId;
+      // Never touch a meal plan, even one that wrongly became a shopping tab: fix the tab instead
+      if (lid === mealPlanId()) continue;
+      const head = await fb.fs.getDocFromServer(listRef(lid));
+      const hv = head.exists() ? (head.data() || {}) : {};
+      if (hv.kind === 'meals') { if (shopById(sh.id)) adoptMealPlan(sh); continue; }
       const snap = await fb.fs.getDocsFromServer(fb.fs.collection(fb.db, 'lists', lid, 'meals'));
       for (const d of snap.docs) {
         const v = d.data(); if (!v || !v.name) continue;
