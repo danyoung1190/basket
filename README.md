@@ -29,7 +29,9 @@ Changes appear on the other phones within a second or two. With no signal, chang
 
 ## Meal plan
 
-The **Meals** tab (first along the top) shows the week, Monday to Sunday. Tap **+ Add** on a day, name the meal, and add the recipe screenshots. Everyone on the shared list sees it straight away, pictures included.
+The **Meals** tab (first along the top) shows the week, Monday to Sunday. Tap **+ Add** on a day, name the meal, say who it's for (Everyone, Us or Kids), and add the recipe screenshots.
+
+**Sharing the meal plan** is separate from the shopping lists. Tap **Share the meal plan** at the top of the Meals tab to get its own code and QR. The other phone joins the usual way (+ Add, Join a shared list), and the app knows it's a meal plan. People on your shopping lists don't see meals unless they have this code.
 
 To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. Paste the recipe text: in Photos, hold on the text in the screenshot, tap **Select All**, then **Copy**. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
 

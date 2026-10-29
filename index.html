@@ -468,7 +468,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.4.2';
+const APP_VERSION = '2.5.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -2431,10 +2431,11 @@ function unsubscribe(id){
   live.delete(id);
 }
 async function startSharing(){
-  if (!sharedShops().length) return;
+  if (!sharedShops().length && !mealPlanId()) return;
   try { await loadFirebase(); } catch(e) { sharingError = e; renderSyncState(); return; }
   sharingError = null;
   sharedShops().forEach(subscribe);
+  if (typeof startMealSync === 'function') { startMealSync(); moveOldMeals(); }
 }
 let sharingError = null;
 
@@ -2523,10 +2524,17 @@ async function joinSharedList(code){
   if (!listId) throw new Error('That is not a Virtual Trolley sharing code. It looks like TRLY-XXXX-XXXX-XXXX-XXXX.');
   const existing = state.shops.find(s => isShared(s) && s.shared.listId === listId);
   if (existing) { state.tab = existing.id; save(); render(); return { shop:existing, already:true }; }
+  if (mealPlanId() === listId) { view = 'meals'; state.view = 'meals'; save(); render(); return { shop:null, meals:true, already:true }; }
   await loadFirebase();
   const snap = await fb.fs.getDocFromServer(listRef(listId));
   if (!snap.exists()) throw new Error('No list has that code. Check it and try again.');
   const v = snap.data() || {};
+  if (v.kind === 'meals') {
+    state.mealPlan = { listId, joinedAt:Date.now() };
+    view = 'meals'; state.view = 'meals';
+    save(); render();
+    return { shop:null, meals:true, already:false };
+  }
   const shop = { id:uid(), name:String(v.name || 'Shared list').slice(0, 80), color:v.color || PALETTE[0],
     sections:Array.isArray(v.sections) ? v.sections : [], noAisles:!!v.noAisles,
     skipAisles:Array.isArray(v.skipAisles) ? v.skipAisles : [], shared:{ fb:true, listId, joinedAt:Date.now() } };
@@ -2619,7 +2627,7 @@ async function joinWith(raw, errorTarget){
   try {
     const r = await joinSharedList(id);
     closeSheet();
-    toast(r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
+    toast(r.meals ? (r.already ? "You're already in the meal plan" : 'Joined the meal plan') : r.already ? `You're already in ${r.shop.name}` : `Joined ${r.shop.name}`);
     return true;
   } catch(e) { fail(fbErrorText(e)); return false; }
 }
@@ -3711,12 +3719,13 @@ async function shrinkImage(file){
 
 /* Sync: lists/{id}/meals and lists/{id}/images */
 let MS = null;
-function mealHome(){ const s = shopById(state.mealsShop); if (isShared(s)) return s; return sharedShops()[0] || null; }
+// The meal plan has its own share code (lists/{planId}, kind 'meals'), separate from every shopping list.
+const mealPlanId = () => state.mealPlan && typeof state.mealPlan.listId === 'string' ? state.mealPlan.listId : null;
 const mealRef = (lid, id) => fb.fs.doc(fb.db, 'lists', lid, 'meals', id);
 const imgRef = (lid, id) => fb.fs.doc(fb.db, 'lists', lid, 'images', id);
 function mealErr(e){ if (MS) { MS.error = e; if (view === 'meals') renderMeals(); } }
 function startMealSync(){
-  const home = mealHome(), lid = home ? home.shared.listId : null;
+  const lid = mealPlanId();
   if (MS && MS.listId === lid) return;
   if (MS && MS.unsub) { try { MS.unsub(); } catch(e) {} }
   MS = null;
@@ -3783,11 +3792,11 @@ function renderMeals(){
   const el = $('#mealsView');
   const days = weekDays(mealWeek), today = dayKey(new Date());
   const label = mealWeek === 0 ? 'This week' : mealWeek === 1 ? 'Next week' : mealWeek === -1 ? 'Last week' : mealWeek < 0 ? `${-mealWeek} weeks ago` : `In ${mealWeek} weeks`;
-  const home = mealHome();
   let sync = '';
   if (MS && MS.error) sync = `<p class="syncnote err">${String((MS.error && MS.error.code) || '').includes('permission') ? 'Meals are saved on this phone, but sharing them needs a one-time setup in Firebase (see the README).' : 'Meals will share when there is signal.'}</p>`;
-  else if (home) sync = `<p class="syncnote">Shared with everyone on ${esc(home.name)}</p>`;
-  else sync = '<p class="syncnote">Saved on this phone. Share a list to plan meals together.</p>';
+  else if (mealPlanId()) sync = '<p class="syncnote">Shared meal plan · <button type="button" class="linkbtn" data-mact="mcode">Share code</button></p>';
+  else if (sharingConfigured()) sync = '<p class="syncnote">Only on this phone · <button type="button" class="linkbtn" data-mact="mshare">Share the meal plan</button></p>';
+  else sync = '<p class="syncnote">Saved on this phone.</p>';
   const inWeek = state.meals.filter(m => days.some(d => dayKey(d) === m.date));
   el.innerHTML = `<div class="weeknav">${mealWeek !== 0 ? '<button type="button" class="mini text" data-mact="weekNow">Today</button>' : ''}<button type="button" class="mini" data-mact="week" data-d="-1" aria-label="Previous week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(-90deg)"')}</button>`
     + `<div class="wk">${label}<small>${shortDate(days[0])} to ${shortDate(days[6])}</small></div>`
@@ -3816,8 +3825,64 @@ $('#mealsView').addEventListener('click', e => {
   else if (a === 'weekNow') { mealWeek = 0; renderMeals(); renderHeader(); }
   else if (a === 'add') openMealEdit(null, b.dataset.date);
   else if (a === 'open') openMeal(b.dataset.id);
+  else if (a === 'mshare') createMealPlan(b);
+  else if (a === 'mcode') openMealCode();
   else if (a === 'ingWeek') openIngredients(state.meals.filter(m => weekDays(mealWeek).some(d => dayKey(d) === m.date)).map(m => m.id));
 });
+
+/* Sharing the meal plan */
+async function createMealPlan(btn){
+  if (mealPlanId()) { openMealCode(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sharing...'; }
+  try {
+    await loadFirebase();
+    await moveOldMeals();
+    const listId = newListId();
+    await withTimeout(fb.fs.setDoc(listRef(listId), { name:'Meal plan', kind:'meals', createdAt:Date.now(), updatedAt:Date.now() }), 12000);
+    state.mealPlan = { listId, joinedAt:Date.now() };
+    save(); render(); openMealCode();
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Share the meal plan'; }
+    toast(fbErrorText(e));
+  }
+}
+function openMealCode(){
+  const lid = mealPlanId(); if (!lid) return;
+  const code = formatCode(lid);
+  let svg = '';
+  try { if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(joinUrl(lid)); q.make(); svg = q.createSvgTag({ cellSize:4, margin:0, scalable:true }); } } catch(e) { svg = ''; }
+  openSheet('<h2>Share the meal plan</h2>'
+    + '<p class="sub">Only people with this code see your meals. It is separate from your shopping lists. On their phone: <strong>+ Add</strong>, <strong>Join a shared list</strong>, then <strong>Scan their code</strong>.</p>'
+    + (svg ? `<div class="qr">${svg}</div>` : '') + `<p class="bigcode">${esc(code)}</p>`
+    + '<div class="sheet-actions"><button type="button" class="btn" data-mact="mcopy">Copy code</button><button type="button" class="btn primary" data-mact="msend">Send</button></div>'
+    + '<button type="button" class="btn danger wide" style="margin-top:24px" data-mact="mleave">Stop sharing on this phone</button>',
+    { type:'mealcode', code });
+}
+// Meals kept on a shopping list by version 2.4 move into this phone's own copy, pictures and all, and leave the list.
+async function moveOldMeals(){
+  if (state.mealsMoved || !fb) return;
+  try {
+    for (const sh of sharedShops()) {
+      const lid = sh.shared.listId;
+      const snap = await fb.fs.getDocsFromServer(fb.fs.collection(fb.db, 'lists', lid, 'meals'));
+      for (const d of snap.docs) {
+        const v = d.data(); if (!v || !v.name) continue;
+        const m = mealFields(Object.assign({}, v, { id:d.id }));
+        const safe = [];
+        for (const k of m.imgs) {
+          let have = await IMG.get(k);
+          if (!have) { try { const is = await fb.fs.getDocFromServer(imgRef(lid, k)); const iv = is.exists() ? is.data() : null; if (iv && iv.data) { await IMG.put(k, iv.data); have = iv.data; } } catch(e) {} }
+          if (have) safe.push(k);
+        }
+        if (!mealById(m.id)) state.meals.push(m);
+        safe.forEach(k => fb.fs.deleteDoc(imgRef(lid, k)).catch(() => {}));
+        if (safe.length === m.imgs.length) fb.fs.deleteDoc(mealRef(lid, d.id)).catch(() => {});
+      }
+    }
+    state.mealsMoved = true; save();
+    if (view === 'meals') renderMeals();
+  } catch(e) { /* no signal or no permission yet: try again next time */ }
+}
 
 /* One meal */
 function openMeal(id, refresh){
@@ -3936,8 +4001,8 @@ function ingShops(){
   const opts = [{ id:'', name:'List' }].concat(state.shops.map(s => ({ id:s.id, name:s.name })));
   if (ingCtx.shop === null) {
     const remembered = state.ingShop !== undefined && (state.ingShop === '' || shopById(state.ingShop)) ? state.ingShop : null;
-    const home = mealHome();
-    ingCtx.shop = remembered !== null ? remembered : home ? home.id : (currentShop() ? currentShop().id : '');
+    const firstShared = sharedShops()[0];
+    ingCtx.shop = remembered !== null ? remembered : firstShared ? firstShared.id : (currentShop() ? currentShop().id : '');
   }
   return opts;
 }
@@ -4019,6 +4084,12 @@ sheet.addEventListener('click', async e => {
   else if (a === 'ingToggle') { const r = ingCtx.rows[+b.dataset.i]; r.on = !r.on; renderIngCheck(); }
   else if (a === 'ingShop') { ingCtx.shop = b.dataset.s; renderIngCheck(); }
   else if (a === 'ingAdd') addIngredients();
+  else if (a === 'mcopy') copyText(ctx.code);
+  else if (a === 'msend') { const text = `Join our meal plan in Virtual Trolley. Copy this whole message, open Virtual Trolley, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text); }
+  else if (a === 'mleave') {
+    if (b.dataset.armed) { state.mealPlan = null; save(); render(); closeSheet(); toast('Meals are on this phone only now. Nothing was deleted.'); }
+    else { b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'Tap again. Your meals stay on this phone.'; }
+  }
 });
 
 /* ---------- Start ---------- */
