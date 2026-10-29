@@ -468,7 +468,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.5.2';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -2433,7 +2433,7 @@ function adoptMealPlan(s){
   state.shops = state.shops.filter(x => x.id !== s.id);
   if (state.tab === s.id) state.tab = 'list';
   state.mealPlan = { listId:lid, joinedAt:Date.now() };   // she joined this one on purpose, so it wins
-  view = 'meals'; state.view = 'meals';
+  state.mealsHidden = false; view = 'meals'; state.view = 'meals';
   save(); render();
   toast('That code is your meal plan, so it is in Meals now');
 }
@@ -2537,14 +2537,14 @@ async function joinSharedList(code){
   if (!listId) throw new Error('That is not a Virtual Trolley sharing code. It looks like TRLY-XXXX-XXXX-XXXX-XXXX.');
   const existing = state.shops.find(s => isShared(s) && s.shared.listId === listId);
   if (existing) { state.tab = existing.id; save(); render(); return { shop:existing, already:true }; }
-  if (mealPlanId() === listId) { view = 'meals'; state.view = 'meals'; save(); render(); return { shop:null, meals:true, already:true }; }
+  if (mealPlanId() === listId) { state.mealsHidden = false; view = 'meals'; state.view = 'meals'; save(); render(); return { shop:null, meals:true, already:true }; }
   await loadFirebase();
   const snap = await fb.fs.getDocFromServer(listRef(listId));
   if (!snap.exists()) throw new Error('No list has that code. Check it and try again.');
   const v = snap.data() || {};
   if (v.kind === 'meals') {
     state.mealPlan = { listId, joinedAt:Date.now() };
-    view = 'meals'; state.view = 'meals';
+    state.mealsHidden = false; view = 'meals'; state.view = 'meals';
     save(); render();
     return { shop:null, meals:true, already:false };
   }
