@@ -371,6 +371,9 @@ form[data-mform] .field{width:100%; display:block}
 .meal small{display:block; color:var(--muted); font-size:13px; margin-top:2px}
 .meal .newtag{margin-left:6px; padding:2px 6px; border-radius:7px; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); font:700 11px/1.2 var(--ui)}
 .weekbtn{margin:16px 0 8px}
+.meal .who{display:inline-block; margin-right:7px; padding:2px 7px; border-radius:7px; font:700 11px/1.3 var(--ui); vertical-align:2px; background:var(--chip); color:var(--muted)}
+.meal .who.kids{background:color-mix(in srgb, #3B82C4 16%, transparent); color:#2F6EA8}
+@media (prefers-color-scheme:dark){ .meal .who.kids{color:#8CC0EE} }
 .mealnote{white-space:pre-wrap; margin:10px 0 0; color:var(--ink); font-size:15px}
 .shots{display:flex; flex-direction:column; gap:10px; margin-top:14px}
 .shots img{width:100%; border-radius:12px; background:var(--chip); min-height:120px; display:block}
@@ -465,7 +468,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.2';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -3674,7 +3677,10 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const shortDate = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const mealById = id => state.meals.find(m => m.id === id);
-const mealFields = m => ({ id:m.id, date:String(m.date || ''), name:String(m.name || '').slice(0, 80), note:String(m.note || '').slice(0, 2000), ing:String(m.ing || '').slice(0, 8000),
+const WHO = [['', 'Everyone'], ['us', 'Us'], ['kids', 'Kids']];
+const whoOf = m => (m.who === 'us' || m.who === 'kids') ? m.who : '';
+const whoRank = w => w === '' ? 0 : w === 'us' ? 1 : 2;
+const mealFields = m => ({ id:m.id, date:String(m.date || ''), name:String(m.name || '').slice(0, 80), who:whoOf(m), note:String(m.note || '').slice(0, 2000), ing:String(m.ing || '').slice(0, 8000),
   imgs:(Array.isArray(m.imgs) ? m.imgs : []).slice(0, 6).map(String), order:m.order || 0, addedBy:m.addedBy || null, addedDev:m.addedDev || null, addedAt:m.addedAt || 0, updatedAt:m.updatedAt || 0 });
 
 /* Screenshot store on the phone */
@@ -3768,34 +3774,27 @@ function hydrateImages(root){
     fetchImage(k).then(d => { if (d && el.isConnected) show(d); });
   });
 }
-function deleteMealImages(m){ (m.imgs || []).forEach(k => { IMG.del(k); if (MS && fb) fb.fs.deleteDoc(imgRef(MS.listId, k)).catch(() => {}); }); }
-// Keep last week and everything ahead; older meals and their pictures go.
-function pruneMeals(){
-  const cut = mondayOf(new Date()); cut.setDate(cut.getDate() - 7);
-  const old = state.meals.filter(m => m.date && keyDate(m.date) < cut);
-  if (!old.length) return;
-  old.forEach(deleteMealImages);
-  state.meals = state.meals.filter(m => !old.includes(m));
-  save();
-}
+// Old weeks are kept for good. A picture is only removed when no meal uses it any more ("Plan again" copies share them).
+function dropImage(k){ if (state.meals.some(x => (x.imgs || []).includes(k))) return; IMG.del(k); if (MS && fb) fb.fs.deleteDoc(imgRef(MS.listId, k)).catch(() => {}); }
+function deleteMealImages(m){ (m.imgs || []).forEach(dropImage); }
 
 /* The week view */
 function renderMeals(){
   const el = $('#mealsView');
   const days = weekDays(mealWeek), today = dayKey(new Date());
-  const label = mealWeek === 0 ? 'This week' : mealWeek === 1 ? 'Next week' : mealWeek === -1 ? 'Last week' : `In ${mealWeek} weeks`;
+  const label = mealWeek === 0 ? 'This week' : mealWeek === 1 ? 'Next week' : mealWeek === -1 ? 'Last week' : mealWeek < 0 ? `${-mealWeek} weeks ago` : `In ${mealWeek} weeks`;
   const home = mealHome();
   let sync = '';
   if (MS && MS.error) sync = `<p class="syncnote err">${String((MS.error && MS.error.code) || '').includes('permission') ? 'Meals are saved on this phone, but sharing them needs a one-time setup in Firebase (see the README).' : 'Meals will share when there is signal.'}</p>`;
   else if (home) sync = `<p class="syncnote">Shared with everyone on ${esc(home.name)}</p>`;
   else sync = '<p class="syncnote">Saved on this phone. Share a list to plan meals together.</p>';
   const inWeek = state.meals.filter(m => days.some(d => dayKey(d) === m.date));
-  el.innerHTML = `<div class="weeknav"><button type="button" class="mini" data-mact="week" data-d="-1" ${mealWeek <= -1 ? 'disabled' : ''} aria-label="Previous week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(-90deg)"')}</button>`
+  el.innerHTML = `<div class="weeknav">${mealWeek !== 0 ? '<button type="button" class="mini text" data-mact="weekNow">Today</button>' : ''}<button type="button" class="mini" data-mact="week" data-d="-1" aria-label="Previous week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(-90deg)"')}</button>`
     + `<div class="wk">${label}<small>${shortDate(days[0])} to ${shortDate(days[6])}</small></div>`
     + `<button type="button" class="mini" data-mact="week" data-d="1" ${mealWeek >= 3 ? 'disabled' : ''} aria-label="Next week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(90deg)"')}</button></div>`
     + sync
     + days.map((d, i) => {
-        const k = dayKey(d), meals = state.meals.filter(m => m.date === k).sort((a, b) => (a.order || 0) - (b.order || 0));
+        const k = dayKey(d), meals = state.meals.filter(m => m.date === k).sort((a, b) => (whoRank(whoOf(a)) - whoRank(whoOf(b))) || ((a.order || 0) - (b.order || 0)));
         return `<section class="day${k === today ? ' today' : ''}${k < today ? ' past' : ''}"><div class="dayhead"><span>${DAY_NAMES[i]}<small>${shortDate(d)}</small></span>`
           + `<button type="button" class="dayadd" data-mact="add" data-date="${k}">+ Add</button></div>`
           + meals.map(m => {
@@ -3803,7 +3802,7 @@ function renderMeals(){
               const isNew = byOther(m) && (m.addedAt || 0) > seenCutoff;
               return `<button type="button" class="meal" data-mact="open" data-id="${esc(m.id)}">`
                 + (m.imgs[0] ? `<span class="thumb" data-img="${esc(m.imgs[0])}">${ICON_PHOTO}</span>` : `<span class="thumb">${ICON_MEALS}</span>`)
-                + `<span><strong>${esc(m.name)}${isNew ? '<span class="newtag">New</span>' : ''}</strong>${info ? `<small>${info}</small>` : ''}</span></button>`;
+                + `<span><strong>${whoOf(m) ? `<span class="who ${whoOf(m)}">${whoOf(m) === 'kids' ? 'Kids' : 'Us'}</span>` : ''}${esc(m.name)}${isNew ? '<span class="newtag">New</span>' : ''}</strong>${info ? `<small>${info}</small>` : ''}</span></button>`;
             }).join('')
           + '</section>';
       }).join('')
@@ -3813,7 +3812,8 @@ function renderMeals(){
 $('#mealsView').addEventListener('click', e => {
   const b = e.target.closest('[data-mact]'); if (!b) return;
   const a = b.dataset.mact;
-  if (a === 'week') { mealWeek = Math.max(-1, Math.min(3, mealWeek + +b.dataset.d)); renderMeals(); }
+  if (a === 'week') { mealWeek = Math.min(3, mealWeek + +b.dataset.d); renderMeals(); renderHeader(); }
+  else if (a === 'weekNow') { mealWeek = 0; renderMeals(); renderHeader(); }
   else if (a === 'add') openMealEdit(null, b.dataset.date);
   else if (a === 'open') openMeal(b.dataset.id);
   else if (a === 'ingWeek') openIngredients(state.meals.filter(m => weekDays(mealWeek).some(d => dayKey(d) === m.date)).map(m => m.id));
@@ -3823,9 +3823,10 @@ $('#mealsView').addEventListener('click', e => {
 function openMeal(id, refresh){
   const m = mealById(id); if (!m) { if (refresh) closeSheet(); return; }
   const d = keyDate(m.date);
-  const html = `<h2>${esc(m.name)}</h2><p class="sub">${DAY_NAMES[(d.getDay() + 6) % 7]} ${shortDate(d)}${byOther(m) && m.addedBy ? ` · added by ${esc(m.addedBy)}` : ''}</p>`
+  const html = `<h2>${esc(m.name)}</h2><p class="sub">${whoOf(m) ? (whoOf(m) === 'kids' ? 'For the kids · ' : 'For us · ') : ''}${DAY_NAMES[(d.getDay() + 6) % 7]} ${shortDate(d)}${byOther(m) && m.addedBy ? ` · added by ${esc(m.addedBy)}` : ''}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-mact="edit">Edit</button>'
     + '<button type="button" class="btn primary" data-mact="ing">Ingredients to list</button></div>'
+    + '<button type="button" class="btn wide" data-mact="again">Plan again</button>'
     + (m.note ? `<p class="mealnote">${esc(m.note)}</p>` : '')
     + (m.imgs.length ? `<div class="shots">${m.imgs.map(k => `<img data-img="${esc(k)}" data-mact="zoom" alt="Recipe picture">`).join('')}</div>` : '')
     + '<button type="button" class="btn danger wide" style="margin-top:24px" data-mact="del">Delete meal</button>';
@@ -3839,17 +3840,21 @@ function openMeal(id, refresh){
 let mealDraft = null;
 function openMealEdit(id, date){
   const m = id ? mealById(id) : null;
-  mealDraft = m ? { id:m.id, date:m.date, name:m.name, note:m.note || '', imgs:m.imgs.slice() } : { id:null, date, name:'', note:'', imgs:[] };
+  // A second meal on a day is usually the kids' one
+  const sameDay = !m && state.meals.some(x => x.date === date && whoOf(x) !== 'kids');
+  mealDraft = m ? { id:m.id, date:m.date, name:m.name, note:m.note || '', imgs:m.imgs.slice(), who:whoOf(m) } : { id:null, date, name:'', note:'', imgs:[], who: sameDay ? 'kids' : '' };
   renderMealEdit(true);
 }
 function renderMealEdit(fresh){
   const dr = mealDraft; if (!dr) return;
   if (!fresh) { const f = sheet.querySelector('form[data-mform="meal"]'); if (f) { dr.name = f.name.value; dr.note = f.note.value; } }
-  const days = weekDays(mealWeek).concat(weekDays(mealWeek + 1));
-  const chips = days.slice(0, 7).map((d, i) => { const k = dayKey(d); return `<button type="button" class="chip" data-mact="day" data-date="${k}" aria-pressed="${k === dr.date}">${DAY_NAMES[i].slice(0, 3)} ${d.getDate()}</button>`; }).join('');
-  const html = `<h2>${dr.id ? 'Edit meal' : 'Add a meal'}</h2>`
+  const days = dr.again ? weekDays(0).concat(weekDays(1)) : weekDays(mealWeek);
+  const chips = days.map((d, i) => { const k = dayKey(d); return (dr.again && i === 7 ? '<span style="flex-basis:100%;height:0"></span>' : '')
+    + `<button type="button" class="chip" data-mact="day" data-date="${k}" aria-pressed="${k === dr.date}">${DAY_NAMES[i % 7].slice(0, 3)} ${d.getDate()}</button>`; }).join('');
+  const html = `<h2>${dr.id ? 'Edit meal' : dr.again ? 'Plan it again' : 'Add a meal'}</h2>`
     + `<form data-mform="meal" autocomplete="off"><input class="field" name="name" type="text" maxlength="80" enterkeyhint="done" autocapitalize="sentences" placeholder="What's for tea? e.g. Pulled pork tacos" value="${esc(dr.name)}" aria-label="Meal name">`
     + `<h3 class="sh-label">Day</h3><div class="daychips">${chips}</div>`
+    + `<h3 class="sh-label">Who's it for</h3><div class="daychips">${WHO.map(([v, l]) => `<button type="button" class="chip" data-mact="who" data-v="${v}" aria-pressed="${v === (dr.who || '')}">${l}</button>`).join('')}</div>`
     + '<h3 class="sh-label">Recipe screenshots</h3>'
     + `<div class="thumbs">${dr.imgs.map(k => `<span class="t" data-img="${esc(k)}"><button type="button" data-mact="unpic" data-k="${esc(k)}" aria-label="Remove picture">&times;</button></span>`).join('')}</div>`
     + '<label class="btn wide" style="margin-top:10px">Add screenshots<input type="file" accept="image/*" multiple hidden data-mfile></label>'
@@ -3861,6 +3866,11 @@ function renderMealEdit(fresh){
   } else openSheet(html, { type:'mealEdit' });
   hydrateImages(sheet);
 }
+// If the kids are having something different that day, the "everyone" meal is really just for the grown-ups.
+function splitDay(m){
+  if (whoOf(m) !== 'kids') return;
+  state.meals.forEach(x => { if (x !== m && x.date === m.date && whoOf(x) === '') { x.who = 'us'; x.updatedAt = Date.now(); } });
+}
 function saveMeal(){
   const dr = mealDraft; if (!dr) return;
   const f = sheet.querySelector('form[data-mform="meal"]');
@@ -3871,12 +3881,13 @@ function saveMeal(){
   if (dr.id) {
     const m = mealById(dr.id); if (!m) return;
     const gone = m.imgs.filter(k => !dr.imgs.includes(k)), id = m.id;
-    Object.assign(m, { name, note, date:dr.date, imgs:dr.imgs.slice(), updatedAt:now });
+    Object.assign(m, { name, note, date:dr.date, imgs:dr.imgs.slice(), who:dr.who || '', updatedAt:now });
+    splitDay(m);
     mealDraft = null; save(); render(); openMeal(id);
-    gone.forEach(k => { IMG.del(k); if (MS && fb) fb.fs.deleteDoc(imgRef(MS.listId, k)).catch(() => {}); });
+    gone.forEach(dropImage);
   } else {
-    const m = { id:uid(), date:dr.date, name, note, ing:'', imgs:dr.imgs.slice(), order:now, addedBy:myName() || null, addedDev:DEV, addedAt:now, updatedAt:now };
-    state.meals.push(m); mealDraft = null; save(); render(); closeSheet();
+    const m = { id:uid(), date:dr.date, name, note, ing:dr.ing || '', imgs:dr.imgs.slice(), who:dr.who || '', order:now, addedBy:myName() || null, addedDev:DEV, addedAt:now, updatedAt:now };
+    state.meals.push(m); splitDay(m); mealDraft = null; save(); render(); closeSheet();
     toast(`Added ${name}`);
   }
 }
@@ -3983,6 +3994,7 @@ sheet.addEventListener('click', async e => {
   const a = b.dataset.mact, ctx = sheetCtx || {};
   if (a === 'edit') openMealEdit(ctx.id);
   else if (a === 'ing') openIngredients([ctx.id]);
+  else if (a === 'again') { const m = mealById(ctx.id); if (m) { mealDraft = { id:null, again:true, date:dayKey(new Date()), name:m.name, note:m.note || '', ing:m.ing || '', imgs:m.imgs.slice(), who:whoOf(m) }; renderMealEdit(true); } }
   else if (a === 'zoom') { const src = b.getAttribute('src'); if (src) openViewer(src); }
   else if (a === 'del') {
     // Remove by id, then tidy the pictures: tidying can trigger a sync that swaps in fresh copies of the meals
@@ -3990,6 +4002,7 @@ sheet.addEventListener('click', async e => {
     else { b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'Tap again to delete'; }
   }
   else if (a === 'day' && mealDraft) { const f = sheet.querySelector('form[data-mform="meal"]'); if (f) { mealDraft.name = f.name.value; mealDraft.note = f.note.value; } mealDraft.date = b.dataset.date; sheet.querySelectorAll('[data-mact="day"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }
+  else if (a === 'who' && mealDraft) { mealDraft.who = b.dataset.v; sheet.querySelectorAll('[data-mact="who"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }
   else if (a === 'unpic' && mealDraft) { mealDraft.imgs = mealDraft.imgs.filter(k => k !== b.dataset.k); renderMealEdit(false); }
   else if (a === 'ingPaste') {
     const ta = sheet.querySelector('textarea[data-ing]');
@@ -4009,7 +4022,6 @@ sheet.addEventListener('click', async e => {
 });
 
 /* ---------- Start ---------- */
-pruneMeals();
 // 2.1.1: aisles now appear on their own, so file anything that was left outside one. Once per private shop.
 (function fileOldItems(){
   state.aislesFiled = state.aislesFiled || [];

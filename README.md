@@ -33,7 +33,7 @@ The **Meals** tab (first along the top) shows the week, Monday to Sunday. Tap **
 
 To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. Paste the recipe text: in Photos, hold on the text in the screenshot, tap **Select All**, then **Copy**. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
 
-Meals from before last week are tidied away automatically. The tab can be hidden in Settings > Tabs at the top.
+Old weeks are kept for good: use the arrows to look back. **Plan again** on any meal copies it, screenshots and ingredients included, to a day this week or next. The tab can be hidden in Settings > Tabs at the top.
 
 ## Moving lists to another phone, or from the old address
 
