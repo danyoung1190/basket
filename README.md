@@ -27,6 +27,14 @@ On shared lists, things other people added show their name in small grey letters
 
 Changes appear on the other phones within a second or two. With no signal, changes wait and send later.
 
+## Meal plan
+
+The **Meals** tab (first along the top) shows the week, Monday to Sunday. Tap **+ Add** on a day, name the meal, and add the recipe screenshots. Everyone on the shared list sees it straight away, pictures included.
+
+To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. Paste the recipe text: in Photos, hold on the text in the screenshot, tap **Select All**, then **Copy**. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
+
+Meals from before last week are tidied away automatically. The tab can be hidden in Settings > Tabs at the top.
+
 ## Moving lists to another phone, or from the old address
 
 The old address (danyoung1190.github.io/basket) shows **Virtual Trolley has a new home** with a **Move my lists** button. Moving takes about a minute:

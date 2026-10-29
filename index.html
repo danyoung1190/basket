@@ -347,6 +347,56 @@ label.btn{cursor:pointer}
 .note{margin:12px 0 0; color:var(--muted); font-size:15px}
 .ver{margin:22px 0 0; text-align:center; color:var(--muted); font-size:12px}
 
+/* ---------- Meals ---------- */
+body.meals-view #addForm, body.meals-view #suggest, body.meals-view #dueBar, body.meals-view #sortBar, body.meals-view #list,
+body.meals-view #doneWrap, body.meals-view #empty, body.meals-view #dock{display:none !important}
+body.meals-view{padding-bottom:calc(env(safe-area-inset-bottom) + 40px)}
+.tab.meals svg{width:15px; height:15px}
+#mealsView{padding:6px 16px 0}
+form[data-mform] .field{width:100%; display:block}
+.weeknav{display:flex; align-items:center; gap:6px; margin:6px 0 4px}
+.weeknav .wk{flex:1; text-align:center; font-weight:700}
+.weeknav .wk small{display:block; font-weight:500; font-size:13px; color:var(--muted)}
+.day{padding:10px 0 8px; border-bottom:1px solid var(--line)}
+.dayhead{display:flex; align-items:center; justify-content:space-between; min-height:36px}
+.dayhead span{font-weight:700}
+.dayhead small{font-weight:500; color:var(--muted); margin-left:6px}
+.day.today .dayhead span{color:var(--accent)}
+.day.past{opacity:.6}
+.dayadd{border:0; background:none; color:var(--accent); font:600 15px var(--ui); padding:6px 2px}
+.meal{display:flex; align-items:center; gap:12px; width:100%; margin:6px 0; padding:8px; border:0; border-radius:14px; background:var(--surface); text-align:left; box-shadow:0 1px 0 var(--line)}
+.meal .thumb{flex:none; width:46px; height:58px; border-radius:9px; background:var(--chip) center/cover no-repeat; display:grid; place-items:center; color:var(--muted)}
+.meal .thumb svg{width:22px; height:22px}
+.meal strong{display:block; font-size:17px}
+.meal small{display:block; color:var(--muted); font-size:13px; margin-top:2px}
+.meal .newtag{margin-left:6px; padding:2px 6px; border-radius:7px; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); font:700 11px/1.2 var(--ui)}
+.weekbtn{margin:16px 0 8px}
+.mealnote{white-space:pre-wrap; margin:10px 0 0; color:var(--ink); font-size:15px}
+.shots{display:flex; flex-direction:column; gap:10px; margin-top:14px}
+.shots img{width:100%; border-radius:12px; background:var(--chip); min-height:120px; display:block}
+.thumbs{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+.thumbs .t{position:relative; width:72px; height:96px; border-radius:10px; background:var(--chip) center/cover no-repeat}
+.thumbs .t button{position:absolute; top:-6px; right:-6px; width:26px; height:26px; border-radius:13px; border:0; background:var(--ink); color:var(--bg); font-size:16px; line-height:1}
+.daychips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.daychips .chip[aria-pressed="true"], .shopchips .chip[aria-pressed="true"]{background:var(--accent); color:#fff}
+textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical; font:16px/1.4 var(--ui)}
+.ingrow{display:flex; align-items:center; gap:12px; width:100%; min-height:48px; padding:6px 2px; border:0; border-bottom:1px solid var(--line); background:none; text-align:left; font:inherit; color:inherit}
+.ingrow .box{flex:none; width:24px; height:24px; border-radius:7px; border:2px solid var(--ring); display:grid; place-items:center}
+.ingrow[aria-pressed="true"] .box{background:var(--accent); border-color:var(--accent); color:#fff}
+.ingrow .box svg{width:14px; height:14px; opacity:0}
+.ingrow[aria-pressed="true"] .box svg{opacity:1}
+.ingrow .nm{flex:1}
+.ingrow .nm small{display:block; color:var(--muted); font-size:12px}
+.ingrow[aria-pressed="false"] .nm{color:var(--muted)}
+.shopchips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.tipbox{margin:10px 0 0; padding:10px 12px; border-radius:12px; background:var(--chip); font-size:14px; color:var(--muted)}
+.syncnote{margin:8px 0 0; font-size:13px; color:var(--muted)}
+.syncnote.err{color:var(--danger)}
+#viewer{position:fixed; inset:0; z-index:80; background:#000; overflow:auto; -webkit-overflow-scrolling:touch}
+#viewer img{display:block; width:100%; height:auto}
+#viewer.zoom img{width:200%}
+#viewer .vclose{position:fixed; top:calc(env(safe-area-inset-top) + 10px); right:12px; width:44px; height:44px; border-radius:22px; border:0; background:rgba(0,0,0,.55); color:#fff; font-size:28px; line-height:1}
+
 @media (prefers-reduced-motion:reduce){
   *, *::before, *::after{transition:none !important; animation:none !important}
 }
@@ -394,7 +444,9 @@ label.btn{cursor:pointer}
   <ul id="list" class="list" aria-label="Items to get"></ul>
   <div id="doneWrap"></div>
   <div id="empty"></div>
+  <div id="mealsView" hidden></div>
 </main>
+<div id="viewer" hidden><img alt=""><button type="button" class="vclose" aria-label="Close">&times;</button></div>
 
 <div id="layer">
   <div id="backdrop" hidden></div>
@@ -413,7 +465,7 @@ label.btn{cursor:pointer}
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -537,6 +589,7 @@ let seenCutoff = +(safeGet(SEEN_KEY) || 0) || Date.now();
 let askedPersist = false;
 function save(){
   if (typeof noteSharedChanges === 'function') noteSharedChanges();
+  if (typeof noteMealChanges === 'function') noteMealChanges();
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch(e) { toast("Couldn't save. Your phone's storage may be full."); return; }
   if (!askedPersist && state.items.length && navigator.storage && navigator.storage.persist) {
@@ -814,7 +867,7 @@ function addItem(raw, opts){
   if (!name) return false;
   const qty = parsed.qty || (opts.qty ? clampQty(opts.qty) : null);
   const k = key(name);
-  const shopId = tabShopId();
+  const shopId = opts.shopId !== undefined ? opts.shopId : tabShopId();
   const same = state.items.find(i => key(i.name) === k && i.shopId === shopId);
   if (same) {
     if (same.done) {
@@ -1075,8 +1128,13 @@ const visibleTabIds = () => ['list', ...state.shops.map(s => s.id)].filter(tabVi
 function render(){
   if (state.tab !== 'list' && !shopById(state.tab)) state.tab = 'list';
   if (!tabVisible(state.tab)) { const v = visibleTabIds(); if (v.length) state.tab = v[0]; else state.listHidden = false, state.tab = 'list'; }
+  if (state.mealsHidden && view === 'meals') view = 'list';
   const shop = currentShop();
-  const color = shop ? shop.color : LIST_COLOR;
+  const color = view === 'meals' ? MEALS_COLOR : shop ? shop.color : LIST_COLOR;
+  document.body.classList.toggle('meals-view', view === 'meals');
+  $('#mealsView').hidden = view !== 'meals';
+  if (fb && typeof startMealSync === 'function') startMealSync();
+  if (view === 'meals' && typeof renderMeals === 'function') renderMeals();
   document.documentElement.style.setProperty('--accent', color);
   $('meta[name="theme-color"]').setAttribute('content', color);
   renderTabs(); renderHeader(); renderList(); renderSuggest(); renderDue(); renderBadge();
@@ -1091,8 +1149,9 @@ function renderTabs(){
   const tabs = [{ id:'list', name:'List', color:LIST_COLOR, n:count(null), isList:true }]
     .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, n:count(s.id), shared:isShared(s) })))
     .filter(t => tabVisible(t.id));
-  tabsEl.innerHTML = tabs.map(t => {
-    const active = (t.isList ? state.tab === 'list' : state.tab === t.id);
+  tabsEl.innerHTML = (state.mealsHidden ? '' : `<button type="button" class="tab meals${view === 'meals' ? ' active' : ''}" data-tab="meals" style="--c:${MEALS_COLOR}" aria-current="${view === 'meals' ? 'page' : 'false'}">${ICON_MEALS}Meals</button>`)
+    + tabs.map(t => {
+    const active = view !== 'meals' && (t.isList ? state.tab === 'list' : state.tab === t.id);
     return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${esc(t.id)}" style="--c:${t.color}" aria-current="${active ? 'page' : 'false'}">`
       + (t.isList ? '' : '<span class="tdot"></span>')
       + `${esc(t.name)}${t.n ? `<span class="count">${t.n}</span>` : ''}${t.shared ? ICON_CLOUD : ''}</button>`;
@@ -1100,8 +1159,9 @@ function renderTabs(){
   // Bring the active tab into view sideways only. scrollIntoView would also scroll the page up to the
   // tabs on every redraw, which threw her back to the top of the list after each tick.
   const active = tabsEl.querySelector('.tab.active');
-  if (active && renderTabs.last !== state.tab) {
-    renderTabs.last = state.tab;
+  const tabKey = view === 'meals' ? 'meals' : state.tab;
+  if (active && renderTabs.last !== tabKey) {
+    renderTabs.last = tabKey;
     const l = active.offsetLeft, r = l + active.offsetWidth;
     if (l < tabsEl.scrollLeft) tabsEl.scrollLeft = l - 16;
     else if (r > tabsEl.scrollLeft + tabsEl.clientWidth) tabsEl.scrollLeft = r - tabsEl.clientWidth + 16;
@@ -1109,6 +1169,14 @@ function renderTabs(){
 }
 
 function renderHeader(){
+  if (view === 'meals') {
+    const days = weekDays(mealWeek).map(dayKey), n = state.meals.filter(m => days.includes(m.date)).length;
+    $('#title').textContent = 'Meals';
+    $('#subtitle').textContent = n ? `${n} ${n === 1 ? 'meal' : 'meals'} planned` : 'Nothing planned yet';
+    $('#btnShop').hidden = true; $('#btnShare').hidden = true;
+    return;
+  }
+  $('#btnShare').hidden = false;
   const shop = currentShop();
   const items = tabItems();
   const todo = items.filter(i => !i.done).length, got = items.length - todo;
@@ -1326,6 +1394,8 @@ main.addEventListener('keydown', e => {
 });
 
 function switchTab(id){
+  if (id === 'meals') { if (view === 'meals') return; view = 'meals'; state.view = 'meals'; save(); render(); window.scrollTo(0, 0); return; }
+  if (view === 'meals') { view = 'list'; state.view = 'list'; if (state.tab === id) { save(); render(); window.scrollTo(0, 0); return; } }
   if (state.tab === id) return;
   state.tab = id; save(); render();
   window.scrollTo(0, 0);
@@ -1336,7 +1406,8 @@ longPress(tabsEl, '.tab', el => {
   else switchTab(el.dataset.tab);
 }, el => {
   const id = el.dataset.tab;
-  if (id && id !== 'list') { switchTab(id); openShopSheet(id); }
+  if (id === 'meals') openTabsSheet();
+  else if (id && id !== 'list') { switchTab(id); openShopSheet(id); }
   else if (id === 'list') openTabsSheet();
 });
 tabsEl.addEventListener('click', e => {
@@ -1782,20 +1853,21 @@ function upgradeSections(shop){
 }
 
 function openTabsSheet(){
-  const rows = [{ id:'list', name:'List', color:LIST_COLOR, hidden:!!state.listHidden }]
+  const rows = [{ id:'meals', name:'Meals', color:MEALS_COLOR, hidden:!!state.mealsHidden }, { id:'list', name:'List', color:LIST_COLOR, hidden:!!state.listHidden }]
     .concat(state.shops.map(s => ({ id:s.id, name:s.name, color:s.color, hidden:!!s.hidden, shared:isShared(s) })));
   const nShops = state.shops.length;
   openSheet(
     '<h2>Tabs at the top</h2><p class="sub">Choose which lists show along the top, and their order. Hidden lists keep their items, and still appear when you hold an item to send it somewhere.</p>'
     + rows.map((r, i) => `<div class="secrow tabrow"><span class="tdot2" style="--c:${r.color}"></span><span class="nm">${esc(r.name)}${r.shared ? ' ' + ICON_CLOUD : ''}<small>${r.hidden ? 'Hidden' : 'Shown'}</small></span>`
-      + (r.id === 'list' ? '' :
-        `<button type="button" class="mini" data-act="tabUp" data-tab="${esc(r.id)}" ${i <= 1 ? 'disabled' : ''} aria-label="Move ${esc(r.name)} left">${ICON_UP}</button>`
-        + `<button type="button" class="mini" data-act="tabDown" data-tab="${esc(r.id)}" ${i >= nShops ? 'disabled' : ''} aria-label="Move ${esc(r.name)} right">${ICON_DOWN}</button>`)
+      + (r.id === 'list' || r.id === 'meals' ? '' :
+        `<button type="button" class="mini" data-act="tabUp" data-tab="${esc(r.id)}" ${i <= 2 ? 'disabled' : ''} aria-label="Move ${esc(r.name)} left">${ICON_UP}</button>`
+        + `<button type="button" class="mini" data-act="tabDown" data-tab="${esc(r.id)}" ${i >= nShops + 1 ? 'disabled' : ''} aria-label="Move ${esc(r.name)} right">${ICON_DOWN}</button>`)
       + `<button type="button" class="switch" role="switch" aria-checked="${!r.hidden}" data-act="tabToggle" data-tab="${esc(r.id)}" aria-label="Show ${esc(r.name)}"><span></span></button></div>`).join(''),
     { type:'tabs' }
   );
 }
 function setTabHidden(id, hidden){
+  if (id === 'meals') { state.mealsHidden = hidden; if (hidden && view === 'meals') { view = 'list'; state.view = 'list'; } save(); render(); return true; }
   const visible = visibleTabIds();
   if (hidden && visible.length <= 1 && visible[0] === id) { toast('Keep at least one tab showing'); return false; }
   if (id === 'list') state.listHidden = hidden; else { const s = shopById(id); if (s) s.hidden = hidden; }
@@ -2073,7 +2145,7 @@ sheet.addEventListener('click', e => {
     case 'tabsSheet': openTabsSheet(); break;
     case 'tabToggle': {
       const id = b.dataset.tab;
-      const hidden = id === 'list' ? !state.listHidden : !(shopById(id) || {}).hidden;
+      const hidden = id === 'meals' ? !state.mealsHidden : id === 'list' ? !state.listHidden : !(shopById(id) || {}).hidden;
       if (setTabHidden(id, hidden)) openTabsSheet();
       break;
     }
@@ -3465,7 +3537,479 @@ function openShopPicker(){
     { type:'picker' }
   );
 }
+
+/* ---------- Recipe ingredients: pasted text -> list items ----------
+   Built for Instagram captions copied with the iPhone's Live Text: emoji bullets, keycap step numbers (1️⃣),
+   "Ingredients" / "Method" headers, "…more" cut-offs. Two passes: a real ingredients list if there is one,
+   otherwise the foods named anywhere in the text (a method alone usually names them all). */
+const PANTRY_DEFAULT = ['salt', 'black pepper', 'pepper', 'olive oil', 'vegetable oil', 'oil', 'water', 'spray oil', 'fry light'];
+// Recipe phrases that should map to a particular catalogue item rather than the first word that matches
+const RECIPE_ALIAS = { 'chicken stock':'Chicken stock cubes', 'beef stock':'Beef stock cubes', 'vegetable stock':'Vegetable stock cubes', 'veg stock':'Veg stock cubes',
+  'stock cube':'Stock cubes', 'stock':'Stock cubes', 'tomato puree':'Tomato puree', 'tomato paste':'Tomato puree', 'garlic clove':'Garlic', 'clove of garlic':'Garlic', 'cloves of garlic':'Garlic',
+  'tinned tomatoes':'Chopped tomatoes', 'canned tomatoes':'Chopped tomatoes', 'chopped tomato':'Chopped tomatoes', 'plain yoghurt':'Natural yoghurt', 'greek yogurt':'Greek yoghurt',
+  'spring onion':'Spring onions', 'scallion':'Spring onions', 'coriander':'Fresh coriander', 'cilantro':'Fresh coriander', 'egg':'Eggs', 'tortilla wrap':'Tortilla wraps', 'wrap':'Wraps',
+  'chilli flakes':'Chilli flakes', 'red chilli':'Red chillies', 'green chilli':'Green chillies', 'chilli':'Chillies', 'lime':'Limes', 'lemon':'Lemons', 'potato':'Potatoes', 'onion':'Onions',
+  'red onion':'Red onions', 'soy sauce':'Soy sauce', 'light soy':'Light soy sauce', 'mince':'Beef mince', 'beef mince':'Beef mince', 'turkey mince':'Turkey mince', 'lean mince':'Lean mince',
+  'parmesan':'Parmesan', 'mozzarella':'Mozzarella', 'cheddar':'Cheddar', 'feta':'Feta', 'rice':'Rice', 'basmati':'Basmati rice' };
+// Single catalogue words that are ordinary verbs or nouns in a method; never picked up from loose text
+const LOOSE_STOP = new Set(['pop', 'ice', 'water', 'tea', 'mix', 'mixers', 'spread', 'jelly', 'pasta', 'sauce', 'oil', 'cream', 'butter', 'honey', 'stock', 'rest', 'top', 'squash', 'roll', 'rolls', 'pie', 'tart', 'spice', 'spices', 'seasoning', 'dip', 'dips']);
+const UNIT = '(?:g|gr|grams?|kg|kilos?|mg|ml|millilitres?|l|lt|litres?|liters?|cl|tbsps?|tbs|tbl|tablespoons?|tsps?|teaspoons?|cups?|oz|ounces?|lbs?|pounds?|pints?|tins?|cans?|jars?|packs?|packets?|bags?|pots?|bunch(?:es)?|handfuls?|pinch(?:es)?|dash(?:es)?|splash(?:es)?|drizzle|knobs?|sprigs?|sticks?|slices?|rashers?|sheets?|cubes?|cloves?|heads?|bulbs?|stalks?|fillets?|pieces?|portions?|scoops?|blocks?|balls?)';
+const TIN_UNITS = /^(tins?|cans?|jars?|packs?|packets?|bags?|pots?|bunch(es)?|blocks?|balls?)$/i;
+const NUM = '(?:\\d+(?:[.,]\\d+)?(?:\\s*\\/\\s*\\d+)?|[½¼¾⅓⅔⅛]|\\d+\\s*[½¼¾⅓⅔⅛])';
+const QTY_RE = new RegExp(`^(?:(${NUM})(?:\\s*(?:-|–|to)\\s*${NUM})?\\s*(?:x\\s*)?(?:(${UNIT})\\b\\.?)?\\s*(?:of\\s+)?|(an?|a few|few|some|handful of|pinch of|splash of|drizzle of)\\s+)`, 'i');
+const PREP = /\b(finely|roughly|thinly|thickly|coarsely|freshly|lightly|chopped|diced|sliced|minced|grated|crushed|peeled|deseeded|de-seeded|halved|quartered|trimmed|drained|rinsed|softened|melted|beaten|whisked|shredded|toasted|cubed|julienned|zested|juiced|cooked|uncooked|large|small|medium|big|ripe|fresh|good quality|heaped|level|rounded|generous|optional)\b/gi;
+const TAIL = /\b(to taste|to serve|for serving|for garnish|to garnish|for frying|for drizzling|for the top|plus extra.*|at room temperature|if you like|if needed|or more|or less|of your choice|of choice)\b.*$/i;
+let CAT_NGRAM = null;
+function catNgrams(){
+  if (CAT_NGRAM) return CAT_NGRAM;
+  CAT_NGRAM = new Map();
+  const add = (k, v) => { if (k && !CAT_NGRAM.has(k)) CAT_NGRAM.set(k, v); };
+  CAT_LIST.forEach(c => add(c.f, c.name));
+  // singular forms: oranges -> orange, tomatoes -> tomato, berries -> berry, limes -> lime
+  CAT_LIST.forEach(c => { const f = c.f;
+    if (/ies$/.test(f)) add(f.replace(/ies$/, 'y'), c.name);
+    if (/oes$/.test(f)) add(f.replace(/es$/, ''), c.name);
+    if (/s$/.test(f) && !/ss$/.test(f)) add(f.replace(/s$/, ''), c.name);
+    if (/(ches|shes|xes)$/.test(f)) add(f.replace(/es$/, ''), c.name); });
+  Object.entries(RECIPE_ALIAS).forEach(([k, v]) => CAT_NGRAM.set(fold(k), v));
+  return CAT_NGRAM;
+}
+// Longest catalogue names found as whole words, left to right without overlaps. loose=true skips the ordinary words.
+function findFoods(text, loose){
+  const words = fold(text).split(' ').filter(Boolean), map = catNgrams(), out = [];
+  for (let i = 0; i < words.length;) {
+    let hit = null, len = 0;
+    for (let n = Math.min(5, words.length - i); n >= 1; n--) {
+      const g = words.slice(i, i + n).join(' ');
+      if (map.has(g) && !(loose && n === 1 && LOOSE_STOP.has(g))) { hit = map.get(g); len = n; break; }
+    }
+    if (hit) { out.push(hit); i += len; } else i++;
+  }
+  return out;
+}
+const stripDecor = l => l
+  .replace(/\d️?⃣/g, ' #step ')                      // keycap numbers 1️⃣ mark method steps
+  .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}️‍⃣]/gu, ' ')
+  .replace(/^[\s•·▪◦‣●○■□▫◾◽►▶➤✓✔✗☐☑*\-–—~>]+/, '')
+  .replace(/\s+/g, ' ').trim();
+function parseIngredients(text){
+  const raw = String(text || '').replace(/…\s*more\b|\.\.\.\s*more\b/gi, '\n');
+  let lines = raw.split(/\r?\n|\s•\s|\s·\s/);
+  if (lines.filter(l => l.trim()).length <= 2 && (raw.match(/,/g) || []).length >= 3) lines = raw.split(/,|\n/);
+  const found = [], seen = new Map();
+  let inIng = false, sawHeader = false, stopped = false;
+  const push = (name, qty, opt, from) => {
+    const k = fold(name); if (!k) return;
+    if (seen.has(k)) { const r = seen.get(k); if (from === 'list' && r.from === 'list') r.qty = Math.min(20, r.qty + qty); return; }
+    const r = { name, qty, on: !opt, opt, from }; seen.set(k, r); found.push(r);
+  };
+  for (const line0 of lines) {
+    const l = stripDecor(line0);
+    if (!l) continue;
+    const head = fold(l.replace(/:$/, ''));
+    if (/^(method|instructions?|directions?|steps?|how to make( it)?|to make|preparation|prep|cooking)$/.test(head)) { stopped = true; continue; }
+    if (/^(ingredients?|you ll need|youll need|what you need|shopping list|for the [a-z ]+)$/.test(head)) { inIng = true; sawHeader = true; stopped = false; continue; }
+    if (stopped) continue;
+    if (/#step/.test(l)) continue;                                   // a numbered method step
+    if (/^\d+[.)]\s/.test(l) && l.length > 42) continue;            // "1. Heat the oil in a pan..."
+    if (/(comment|follow|save this|share this|link in bio|\bdm\b|tag a friend|subscribe|@\w|#\w|serves?\s*\d|makes\s*\d|prep time|cook time|kcal|calories|protein|carbs|syns?\b|macros|per serving)/i.test(l)) continue;
+    if (/[.!?]$/.test(l) && l.split(' ').length > 8) continue;       // a sentence, not a list line
+    let t = l.replace(/^\d+[.)]\s+/, '');
+    const opt = /\boptional\b/i.test(t);
+    t = t.replace(/^optional\s*:?\s*/i, '');
+    if (/:$/.test(t)) continue;                                      // sub-heading such as "Sauce:"
+    t = t.replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ');
+    let qty = 1;
+    const m = t.match(QTY_RE);
+    if (m) {
+      const n = m[1] ? parseFloat(String(m[1]).replace(',', '.').replace(/[½¼¾⅓⅔⅛]/, '')) : NaN;
+      const unit = m[2] || '';
+      if (!unit && n >= 1 && Number.isInteger(n)) qty = n;
+      else if (TIN_UNITS.test(unit) && n >= 1) qty = Math.round(n);
+      t = t.slice(m[0].length);
+    }
+    t = t.split(/\s[-–—]\s|,/)[0];
+    t = t.replace(TAIL, '').split(/\s+or\s+/i)[0].replace(/^\s*(juice|zest|juice and zest) of\s+(an?\s+|\d+\s+)?/i, '').replace(/^\s*(of|the)\s+/i, '').replace(/[.:;]+$/, '').trim();
+    if (/\b(cloves?|slices?|rashers?|sprigs?|stalks?|sticks?|leaves|cubes?|squares?|florets?)\b/i.test(t)) qty = 1;   // "3 garlic cloves" is one bulb
+    // Match before stripping prep words, so "chopped tomatoes" stays Chopped tomatoes
+    let foods = findFoods(t, false);
+    const bare = t.replace(PREP, ' ').replace(/\s+/g, ' ').trim();
+    if (!foods.length) foods = findFoods(bare, false);
+    if (!bare || bare.length < 2) continue;
+    if (!(inIng || !!m || foods.length)) continue;
+    if (!foods.length && bare.split(' ').length > 5) continue;       // long and unrecognised: probably chatter
+    // "Salt and black pepper" is two things; otherwise the longest match names the item
+    const names = foods.length > 1 && /\s(and|&|\+)\s/.test(t) ? foods : [foods.length ? foods.slice().sort((a, b) => b.length - a.length)[0] : bare.charAt(0).toUpperCase() + bare.slice(1)];
+    names.forEach(name => {
+      if (/^water$/i.test(name)) return;
+      // Counts only mean something for loose fruit and veg and for tins; "8 wraps" is still one pack
+      const q = (TIN_UNITS.test((m && m[2]) || '') || categoryFor(name) === 'Fruit & veg') ? qty : 1;
+      push(name, Math.min(20, q), opt, 'list');
+    });
+  }
+  if (found.length) return { rows:found, mode:'list' };
+  // No list: pick out foods named anywhere (a method usually names them all)
+  findFoods(raw.replace(/\d️?⃣/g, ' '), true).forEach(n => { if (!/^water$/i.test(n)) push(n, 1, false, 'text'); });
+  return { rows:found, mode:found.length ? 'text' : 'none' };
+}
+
+
+/* ---------- Meal plan ----------
+   A week of meals, each with a name, screenshots, a note and its ingredients text. Shared through the same
+   shared list as the family's groceries (lists/{id}/meals, lists/{id}/images). Screenshots are shrunk to about
+   200 KB and kept in IndexedDB on the phone; the free database plan holds them comfortably. */
+const MEALS_COLOR = '#B5562E';
+const ICON_MEALS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10"/><path d="M17 3c-2 2-3 4-3 7h3v11"/></svg>';
+const ICON_PHOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>';
+let view = state.view === 'meals' && !state.mealsHidden ? 'meals' : 'list';
+let mealWeek = 0;
+if (!Array.isArray(state.meals)) state.meals = [];
+if (!state.pantry || typeof state.pantry !== 'object') state.pantry = {};
+const pad2 = n => String(n).padStart(2, '0');
+const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const keyDate = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+function mondayOf(d){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+function weekDays(offset){ const m = mondayOf(new Date()); m.setDate(m.getDate() + offset * 7); return [...Array(7)].map((_, i) => { const d = new Date(m); d.setDate(m.getDate() + i); return d; }); }
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const shortDate = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const mealById = id => state.meals.find(m => m.id === id);
+const mealFields = m => ({ id:m.id, date:String(m.date || ''), name:String(m.name || '').slice(0, 80), note:String(m.note || '').slice(0, 2000), ing:String(m.ing || '').slice(0, 8000),
+  imgs:(Array.isArray(m.imgs) ? m.imgs : []).slice(0, 6).map(String), order:m.order || 0, addedBy:m.addedBy || null, addedDev:m.addedDev || null, addedAt:m.addedAt || 0, updatedAt:m.updatedAt || 0 });
+
+/* Screenshot store on the phone */
+const IMG = (() => {
+  let dbp = null; const mem = new Map();
+  const open = () => dbp || (dbp = new Promise((res, rej) => { try { const r = indexedDB.open('trolley-img', 1); r.onupgradeneeded = () => r.result.createObjectStore('img'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch(e) { rej(e); } }));
+  const tx = (mode, fn) => open().then(db => new Promise((res, rej) => { const t = db.transaction('img', mode), q = fn(t.objectStore('img')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }));
+  return {
+    async get(k){ if (mem.has(k)) return mem.get(k); const v = await tx('readonly', st => st.get(k)).catch(() => null); if (v) mem.set(k, v); return v || null; },
+    async put(k, v){ mem.set(k, v); await tx('readwrite', st => st.put(v, k)).catch(() => {}); },
+    async del(k){ mem.delete(k); await tx('readwrite', st => st.delete(k)).catch(() => {}); },
+    peek: k => mem.get(k) || null
+  };
+})();
+async function shrinkImage(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('That picture could not be opened')); i.src = url; });
+    let w = Math.min(720, img.naturalWidth), h = Math.round(img.naturalHeight * w / img.naturalWidth);
+    if (h > 2600) { w = Math.round(w * 2600 / h); h = 2600; }
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+    let q = .72, out = c.toDataURL('image/jpeg', q);
+    while (out.length > 850000 && q > .3) { q -= .12; out = c.toDataURL('image/jpeg', q); }
+    return out;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* Sync: lists/{id}/meals and lists/{id}/images */
+let MS = null;
+function mealHome(){ const s = shopById(state.mealsShop); if (isShared(s)) return s; return sharedShops()[0] || null; }
+const mealRef = (lid, id) => fb.fs.doc(fb.db, 'lists', lid, 'meals', id);
+const imgRef = (lid, id) => fb.fs.doc(fb.db, 'lists', lid, 'images', id);
+function mealErr(e){ if (MS) { MS.error = e; if (view === 'meals') renderMeals(); } }
+function startMealSync(){
+  const home = mealHome(), lid = home ? home.shared.listId : null;
+  if (MS && MS.listId === lid) return;
+  if (MS && MS.unsub) { try { MS.unsub(); } catch(e) {} }
+  MS = null;
+  if (!lid || !fb) return;
+  const ms = MS = { listId:lid, known:new Map(), ready:false, error:null, unsub:null, up:new Set() };
+  ms.unsub = fb.fs.onSnapshot(fb.fs.collection(fb.db, 'lists', lid, 'meals'), { includeMetadataChanges:true }, snap => {
+    if (MS !== ms) return;
+    ms.error = null;
+    const incoming = new Map();
+    snap.forEach(d => { const v = d.data(); if (v && v.name) incoming.set(d.id, mealFields(Object.assign({}, v, { id:d.id }))); });
+    const known = new Map([...incoming].map(([k, v]) => [k, JSON.stringify(v)]));
+    if (!ms.ready) { ms.ready = true; state.meals.forEach(m => { if (!incoming.has(m.id)) incoming.set(m.id, m); }); }
+    const openId = sheetCtx && sheetCtx.type === 'meal' ? sheetCtx.id : null;
+    const before = openId && mealById(openId) ? JSON.stringify(mealFields(mealById(openId))) : null;
+    state.meals = [...incoming.values()];
+    const after = openId && mealById(openId) ? JSON.stringify(mealFields(mealById(openId))) : null;
+    ms.known = known;
+    safeSet(KEY, JSON.stringify(state));
+    if (view === 'meals') { renderMeals(); renderHeader(); }
+    if (openId && before !== after) openMeal(openId, true);   // only when that meal really changed
+    noteMealChanges();
+  }, err => { if (MS === ms) { ms.error = err; if (view === 'meals') renderMeals(); } });
+}
+function noteMealChanges(){
+  const ms = MS; if (!ms || !ms.ready || !fb) return;
+  const cur = new Map(state.meals.map(m => [m.id, m]));
+  cur.forEach((m, id) => {
+    const f = mealFields(m), sig = JSON.stringify(f);
+    if (ms.known.get(id) !== sig) { ms.known.set(id, sig); fb.fs.setDoc(mealRef(ms.listId, id), f).catch(mealErr); }
+    f.imgs.forEach(k => { if (!ms.up.has(k)) uploadImage(ms, k); });
+  });
+  [...ms.known.keys()].forEach(id => { if (!cur.has(id)) { ms.known.delete(id); fb.fs.deleteDoc(mealRef(ms.listId, id)).catch(mealErr); } });
+}
+async function uploadImage(ms, k){
+  ms.up.add(k);
+  const data = await IMG.get(k);
+  if (!data) return;                     // not on this phone: it came from the other one
+  fb.fs.setDoc(imgRef(ms.listId, k), { data, at:Date.now() }).catch(e => { ms.up.delete(k); mealErr(e); });
+}
+async function fetchImage(k){
+  const local = await IMG.get(k); if (local) return local;
+  if (!MS || !fb) return null;
+  try {
+    const get = fb.fs.getDoc || fb.fs.getDocFromServer;
+    const snap = await get(imgRef(MS.listId, k));
+    const v = snap.exists() ? snap.data() : null;
+    if (v && v.data) { MS.up.add(k); await IMG.put(k, v.data); return v.data; }
+  } catch(e) {}
+  return null;
+}
+function hydrateImages(root){
+  root.querySelectorAll('[data-img]').forEach(el => {
+    const k = el.dataset.img, show = d => { if (el.tagName === 'IMG') el.src = d; else { el.style.backgroundImage = `url("${d}")`; if (el.classList.contains('thumb')) el.innerHTML = ''; } };
+    const hit = IMG.peek(k); if (hit) { show(hit); return; }
+    fetchImage(k).then(d => { if (d && el.isConnected) show(d); });
+  });
+}
+function deleteMealImages(m){ (m.imgs || []).forEach(k => { IMG.del(k); if (MS && fb) fb.fs.deleteDoc(imgRef(MS.listId, k)).catch(() => {}); }); }
+// Keep last week and everything ahead; older meals and their pictures go.
+function pruneMeals(){
+  const cut = mondayOf(new Date()); cut.setDate(cut.getDate() - 7);
+  const old = state.meals.filter(m => m.date && keyDate(m.date) < cut);
+  if (!old.length) return;
+  old.forEach(deleteMealImages);
+  state.meals = state.meals.filter(m => !old.includes(m));
+  save();
+}
+
+/* The week view */
+function renderMeals(){
+  const el = $('#mealsView');
+  const days = weekDays(mealWeek), today = dayKey(new Date());
+  const label = mealWeek === 0 ? 'This week' : mealWeek === 1 ? 'Next week' : mealWeek === -1 ? 'Last week' : `In ${mealWeek} weeks`;
+  const home = mealHome();
+  let sync = '';
+  if (MS && MS.error) sync = `<p class="syncnote err">${String((MS.error && MS.error.code) || '').includes('permission') ? 'Meals are saved on this phone, but sharing them needs a one-time setup in Firebase (see the README).' : 'Meals will share when there is signal.'}</p>`;
+  else if (home) sync = `<p class="syncnote">Shared with everyone on ${esc(home.name)}</p>`;
+  else sync = '<p class="syncnote">Saved on this phone. Share a list to plan meals together.</p>';
+  const inWeek = state.meals.filter(m => days.some(d => dayKey(d) === m.date));
+  el.innerHTML = `<div class="weeknav"><button type="button" class="mini" data-mact="week" data-d="-1" ${mealWeek <= -1 ? 'disabled' : ''} aria-label="Previous week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(-90deg)"')}</button>`
+    + `<div class="wk">${label}<small>${shortDate(days[0])} to ${shortDate(days[6])}</small></div>`
+    + `<button type="button" class="mini" data-mact="week" data-d="1" ${mealWeek >= 3 ? 'disabled' : ''} aria-label="Next week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(90deg)"')}</button></div>`
+    + sync
+    + days.map((d, i) => {
+        const k = dayKey(d), meals = state.meals.filter(m => m.date === k).sort((a, b) => (a.order || 0) - (b.order || 0));
+        return `<section class="day${k === today ? ' today' : ''}${k < today ? ' past' : ''}"><div class="dayhead"><span>${DAY_NAMES[i]}<small>${shortDate(d)}</small></span>`
+          + `<button type="button" class="dayadd" data-mact="add" data-date="${k}">+ Add</button></div>`
+          + meals.map(m => {
+              const info = [byOther(m) && m.addedBy ? esc(m.addedBy) : '', m.ing ? 'ingredients in' : (m.imgs.length ? `${m.imgs.length} ${m.imgs.length === 1 ? 'picture' : 'pictures'}` : '')].filter(Boolean).join(' · ');
+              const isNew = byOther(m) && (m.addedAt || 0) > seenCutoff;
+              return `<button type="button" class="meal" data-mact="open" data-id="${esc(m.id)}">`
+                + (m.imgs[0] ? `<span class="thumb" data-img="${esc(m.imgs[0])}">${ICON_PHOTO}</span>` : `<span class="thumb">${ICON_MEALS}</span>`)
+                + `<span><strong>${esc(m.name)}${isNew ? '<span class="newtag">New</span>' : ''}</strong>${info ? `<small>${info}</small>` : ''}</span></button>`;
+            }).join('')
+          + '</section>';
+      }).join('')
+    + (inWeek.length ? `<button type="button" class="btn primary wide weekbtn" data-mact="ingWeek">Ingredients for the week</button>` : '');
+  hydrateImages(el);
+}
+$('#mealsView').addEventListener('click', e => {
+  const b = e.target.closest('[data-mact]'); if (!b) return;
+  const a = b.dataset.mact;
+  if (a === 'week') { mealWeek = Math.max(-1, Math.min(3, mealWeek + +b.dataset.d)); renderMeals(); }
+  else if (a === 'add') openMealEdit(null, b.dataset.date);
+  else if (a === 'open') openMeal(b.dataset.id);
+  else if (a === 'ingWeek') openIngredients(state.meals.filter(m => weekDays(mealWeek).some(d => dayKey(d) === m.date)).map(m => m.id));
+});
+
+/* One meal */
+function openMeal(id, refresh){
+  const m = mealById(id); if (!m) { if (refresh) closeSheet(); return; }
+  const d = keyDate(m.date);
+  const html = `<h2>${esc(m.name)}</h2><p class="sub">${DAY_NAMES[(d.getDay() + 6) % 7]} ${shortDate(d)}${byOther(m) && m.addedBy ? ` · added by ${esc(m.addedBy)}` : ''}</p>`
+    + '<div class="sheet-actions"><button type="button" class="btn" data-mact="edit">Edit</button>'
+    + '<button type="button" class="btn primary" data-mact="ing">Ingredients to list</button></div>'
+    + (m.note ? `<p class="mealnote">${esc(m.note)}</p>` : '')
+    + (m.imgs.length ? `<div class="shots">${m.imgs.map(k => `<img data-img="${esc(k)}" data-mact="zoom" alt="Recipe picture">`).join('')}</div>` : '')
+    + '<button type="button" class="btn danger wide" style="margin-top:24px" data-mact="del">Delete meal</button>';
+  if (refresh && sheetCtx && sheetCtx.type === 'meal' && sheetCtx.id === id) {
+    const armed = sheet.querySelector('[data-mact="del"][data-armed]');
+    const top = sheet.scrollTop; sheet.innerHTML = sheet.querySelector('.sheet-top').outerHTML + html; sheet.scrollTop = top;
+    if (armed) { const d = sheet.querySelector('[data-mact="del"]'); d.dataset.armed = '1'; d.classList.add('armed'); d.textContent = 'Tap again to delete'; }
+  } else openSheet(html, { type:'meal', id });
+  hydrateImages(sheet);
+}
+let mealDraft = null;
+function openMealEdit(id, date){
+  const m = id ? mealById(id) : null;
+  mealDraft = m ? { id:m.id, date:m.date, name:m.name, note:m.note || '', imgs:m.imgs.slice() } : { id:null, date, name:'', note:'', imgs:[] };
+  renderMealEdit(true);
+}
+function renderMealEdit(fresh){
+  const dr = mealDraft; if (!dr) return;
+  if (!fresh) { const f = sheet.querySelector('form[data-mform="meal"]'); if (f) { dr.name = f.name.value; dr.note = f.note.value; } }
+  const days = weekDays(mealWeek).concat(weekDays(mealWeek + 1));
+  const chips = days.slice(0, 7).map((d, i) => { const k = dayKey(d); return `<button type="button" class="chip" data-mact="day" data-date="${k}" aria-pressed="${k === dr.date}">${DAY_NAMES[i].slice(0, 3)} ${d.getDate()}</button>`; }).join('');
+  const html = `<h2>${dr.id ? 'Edit meal' : 'Add a meal'}</h2>`
+    + `<form data-mform="meal" autocomplete="off"><input class="field" name="name" type="text" maxlength="80" enterkeyhint="done" autocapitalize="sentences" placeholder="What's for tea? e.g. Pulled pork tacos" value="${esc(dr.name)}" aria-label="Meal name">`
+    + `<h3 class="sh-label">Day</h3><div class="daychips">${chips}</div>`
+    + '<h3 class="sh-label">Recipe screenshots</h3>'
+    + `<div class="thumbs">${dr.imgs.map(k => `<span class="t" data-img="${esc(k)}"><button type="button" data-mact="unpic" data-k="${esc(k)}" aria-label="Remove picture">&times;</button></span>`).join('')}</div>`
+    + '<label class="btn wide" style="margin-top:10px">Add screenshots<input type="file" accept="image/*" multiple hidden data-mfile></label>'
+    + '<h3 class="sh-label">Note</h3>'
+    + `<textarea class="field" name="note" rows="3" style="min-height:70px" placeholder="Anything to remember, e.g. double it for leftovers">${esc(dr.note)}</textarea>`
+    + '<button type="submit" class="btn primary wide">Save</button></form>';
+  if (!fresh && sheetCtx && sheetCtx.type === 'mealEdit') {
+    const top = sheet.scrollTop; sheet.innerHTML = sheet.querySelector('.sheet-top').outerHTML + html; sheet.scrollTop = top;
+  } else openSheet(html, { type:'mealEdit' });
+  hydrateImages(sheet);
+}
+function saveMeal(){
+  const dr = mealDraft; if (!dr) return;
+  const f = sheet.querySelector('form[data-mform="meal"]');
+  const name = clean(f ? f.name.value : dr.name), note = (f ? f.note.value : dr.note).trim();
+  if (!name) { toast('Give the meal a name'); return; }
+  if (!dr.date) { toast('Pick a day'); return; }
+  const now = Date.now();
+  if (dr.id) {
+    const m = mealById(dr.id); if (!m) return;
+    const gone = m.imgs.filter(k => !dr.imgs.includes(k)), id = m.id;
+    Object.assign(m, { name, note, date:dr.date, imgs:dr.imgs.slice(), updatedAt:now });
+    mealDraft = null; save(); render(); openMeal(id);
+    gone.forEach(k => { IMG.del(k); if (MS && fb) fb.fs.deleteDoc(imgRef(MS.listId, k)).catch(() => {}); });
+  } else {
+    const m = { id:uid(), date:dr.date, name, note, ing:'', imgs:dr.imgs.slice(), order:now, addedBy:myName() || null, addedDev:DEV, addedAt:now, updatedAt:now };
+    state.meals.push(m); mealDraft = null; save(); render(); closeSheet();
+    toast(`Added ${name}`);
+  }
+}
+sheet.addEventListener('change', async e => {
+  const inp = e.target.closest('[data-mfile]'); if (!inp || !mealDraft) return;
+  const files = [...inp.files].slice(0, 6 - mealDraft.imgs.length);
+  if (!files.length) { toast('Up to 6 pictures per meal'); return; }
+  toast(files.length === 1 ? 'Adding the picture...' : `Adding ${files.length} pictures...`);
+  for (const f of files) {
+    try { const data = await shrinkImage(f); const k = uid().replace(/-/g, '').slice(0, 20); await IMG.put(k, data); mealDraft.imgs.push(k); }
+    catch(err) { toast(err.message || 'That picture could not be added'); }
+  }
+  hideToast(); renderMealEdit(false);
+});
+sheet.addEventListener('submit', e => {
+  const f = e.target.closest('form[data-mform="meal"]'); if (!f) return;
+  e.preventDefault(); e.stopImmediatePropagation(); saveMeal();
+}, true);
+
+/* Screenshot viewer: tap to zoom, tap the cross to close */
+const viewerEl = $('#viewer');
+function openViewer(src){ viewerEl.querySelector('img').src = src; viewerEl.classList.remove('zoom'); viewerEl.hidden = false; viewerEl.scrollTop = 0; }
+viewerEl.addEventListener('click', e => {
+  if (e.target.closest('.vclose')) { viewerEl.hidden = true; return; }
+  viewerEl.classList.toggle('zoom');
+});
+
+/* Ingredients: paste, check, send */
+let ingCtx = null;
+function openIngredients(mealIds){
+  const meals = mealIds.map(mealById).filter(Boolean);
+  if (!meals.length) return;
+  ingCtx = { mealIds:meals.map(m => m.id), rows:null, shop:null };
+  if (meals.length === 1 && !meals[0].ing) return renderIngPaste();
+  renderIngCheck();
+}
+function renderIngPaste(){
+  const m = mealById(ingCtx.mealIds[0]);
+  openSheet(`<h2>Ingredients for ${esc(m.name)}</h2><p class="sub">Paste the recipe text. A list of ingredients is best, but the method works too.</p>`
+    + `<textarea class="field" data-ing placeholder="Paste here">${esc(m.ing || '')}</textarea>`
+    + '<div class="sheet-actions"><button type="button" class="btn" data-mact="ingPaste">Paste</button><button type="button" class="btn primary" data-mact="ingRead">Check ingredients</button></div>'
+    + '<p class="tipbox"><strong>Copying from a screenshot:</strong> open it in Photos, press and hold on the text, tap <strong>Select All</strong>, then <strong>Copy</strong>. Do the same for each screenshot and paste them one after another.</p>',
+    { type:'ingPaste' });
+}
+function ingShops(){
+  const opts = [{ id:'', name:'List' }].concat(state.shops.map(s => ({ id:s.id, name:s.name })));
+  if (ingCtx.shop === null) {
+    const remembered = state.ingShop !== undefined && (state.ingShop === '' || shopById(state.ingShop)) ? state.ingShop : null;
+    const home = mealHome();
+    ingCtx.shop = remembered !== null ? remembered : home ? home.id : (currentShop() ? currentShop().id : '');
+  }
+  return opts;
+}
+function renderIngCheck(){
+  const meals = ingCtx.mealIds.map(mealById).filter(Boolean);
+  if (!ingCtx.rows) {
+    const merged = new Map(); let mode = 'list';
+    meals.forEach(m => {
+      if (!m.ing) return;
+      const r = parseIngredients(m.ing); if (r.mode === 'text') mode = 'text';
+      r.rows.forEach(x => { const k = fold(x.name); if (merged.has(k)) merged.get(k).qty = Math.min(20, merged.get(k).qty + (categoryFor(x.name) === 'Fruit & veg' ? x.qty : 0)); else merged.set(k, Object.assign({}, x)); });
+    });
+    const onList = new Set(state.items.filter(i => !i.done).map(i => fold(i.name)));
+    ingCtx.rows = [...merged.values()].map(x => {
+      const k = fold(x.name), pantry = state.pantry[k] !== undefined ? state.pantry[k] : PANTRY_DEFAULT.includes(k);
+      return Object.assign(x, { on: x.on && !pantry && !onList.has(k), have:pantry, already:onList.has(k) });
+    });
+    ingCtx.mode = mode;
+  }
+  const missing = meals.filter(m => !m.ing);
+  const opts = ingShops();
+  const n = ingCtx.rows.filter(r => r.on).length;
+  const target = opts.find(o => o.id === ingCtx.shop) || opts[0];
+  const title = meals.length === 1 ? `Ingredients for ${esc(meals[0].name)}` : 'Ingredients for the week';
+  openSheet(`<h2>${title}</h2>`
+    + (ingCtx.rows.length ? `<p class="sub">${ingCtx.mode === 'text' ? "There was no ingredients list, so these are the foods the recipe mentions. Untick anything you don't need." : "Untick anything you've already got."}</p>` : '<p class="sub">No ingredients found yet.</p>')
+    + ingCtx.rows.map((r, i) => `<button type="button" class="ingrow" data-mact="ingToggle" data-i="${i}" aria-pressed="${r.on}"><span class="box">${ICON_TICK}</span>`
+        + `<span class="nm">${esc(r.name)}${r.qty > 1 ? ` <span class="qty">×${r.qty}</span>` : ''}${r.already ? '<small>Already on a list</small>' : r.have ? '<small>Usually in the cupboard</small>' : r.opt ? '<small>Optional</small>' : ''}</span></button>`).join('')
+    + (missing.length ? `<p class="note">No ingredients yet for ${missing.map(m => `<strong>${esc(m.name)}</strong>`).join(', ')}. Open the meal and tap Ingredients to list.</p>` : '')
+    + (ingCtx.rows.length ? `<h3 class="sh-label">Add to</h3><div class="shopchips">${opts.map(o => `<button type="button" class="chip" data-mact="ingShop" data-s="${esc(o.id)}" aria-pressed="${o.id === ingCtx.shop}">${esc(o.name)}</button>`).join('')}</div>`
+        + `<button type="button" class="btn primary wide" data-mact="ingAdd" ${n ? '' : 'disabled'}>Add ${n} ${n === 1 ? 'item' : 'items'} to ${esc(target.name)}</button>` : '')
+    + (meals.length === 1 ? '<button type="button" class="btn wide" data-mact="ingEdit">Change the recipe text</button>' : ''),
+    { type:'ingCheck' });
+}
+function addIngredients(){
+  const rows = ingCtx.rows, shopId = ingCtx.shop || null;
+  const pick = rows.filter(r => r.on);
+  if (!pick.length) return;
+  snapshot();
+  let added = 0;
+  pick.forEach(r => {
+    if (state.items.some(i => !i.done && i.shopId === shopId && fold(i.name) === fold(r.name))) return;
+    if (addItem(r.name, { quiet:true, qty:r.qty > 1 ? r.qty : null, shopId })) added++;
+  });
+  // Learn the cupboard: what she unticks is usually in; what she ticks is not
+  rows.forEach(r => { if (r.already) return; const k = fold(r.name); if (!r.on) state.pantry[k] = true; else if (state.pantry[k] || PANTRY_DEFAULT.includes(k)) state.pantry[k] = false; });
+  state.ingShop = ingCtx.shop || '';
+  const shop = shopById(shopId);
+  save(); render(); closeSheet();
+  toast(`Added ${added} to ${shop ? shop.name : 'your list'}`, true);
+}
+sheet.addEventListener('click', async e => {
+  const b = e.target.closest('[data-mact]'); if (!b || !sheet.contains(b)) return;
+  const a = b.dataset.mact, ctx = sheetCtx || {};
+  if (a === 'edit') openMealEdit(ctx.id);
+  else if (a === 'ing') openIngredients([ctx.id]);
+  else if (a === 'zoom') { const src = b.getAttribute('src'); if (src) openViewer(src); }
+  else if (a === 'del') {
+    // Remove by id, then tidy the pictures: tidying can trigger a sync that swaps in fresh copies of the meals
+    if (b.dataset.armed) { const m = mealById(ctx.id); if (m) { const gone = Object.assign({}, m); state.meals = state.meals.filter(x => x.id !== gone.id); save(); render(); closeSheet(); deleteMealImages(gone); toast(`Deleted ${gone.name}`); } }
+    else { b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'Tap again to delete'; }
+  }
+  else if (a === 'day' && mealDraft) { const f = sheet.querySelector('form[data-mform="meal"]'); if (f) { mealDraft.name = f.name.value; mealDraft.note = f.note.value; } mealDraft.date = b.dataset.date; sheet.querySelectorAll('[data-mact="day"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }
+  else if (a === 'unpic' && mealDraft) { mealDraft.imgs = mealDraft.imgs.filter(k => k !== b.dataset.k); renderMealEdit(false); }
+  else if (a === 'ingPaste') {
+    const ta = sheet.querySelector('textarea[data-ing]');
+    try { const t = await navigator.clipboard.readText(); if (t) { ta.value = (ta.value ? ta.value + '\n' : '') + t; return; } } catch(err) {}
+    ta.focus(); toast('Hold in the box and choose Paste');
+  }
+  else if (a === 'ingRead') {
+    const m = mealById(ingCtx.mealIds[0]); const t = sheet.querySelector('textarea[data-ing]').value.trim();
+    if (!t) { toast('Paste the recipe text first'); return; }
+    if (m && m.ing !== t) { m.ing = t; m.updatedAt = Date.now(); save(); }
+    ingCtx.rows = null; renderIngCheck();
+  }
+  else if (a === 'ingEdit') renderIngPaste();
+  else if (a === 'ingToggle') { const r = ingCtx.rows[+b.dataset.i]; r.on = !r.on; renderIngCheck(); }
+  else if (a === 'ingShop') { ingCtx.shop = b.dataset.s; renderIngCheck(); }
+  else if (a === 'ingAdd') addIngredients();
+});
+
 /* ---------- Start ---------- */
+pruneMeals();
 // 2.1.1: aisles now appear on their own, so file anything that was left outside one. Once per private shop.
 (function fileOldItems(){
   state.aislesFiled = state.aislesFiled || [];
