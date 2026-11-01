@@ -469,7 +469,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.5.3';
+const APP_VERSION = '2.5.4';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1945,6 +1945,7 @@ function openSettings(){
     + (sharingWarning() ? '<p class="note err">Sharing needs attention. Open Shared lists for details.</p>' : '')
     + `<button type="button" class="btn wide" style="margin-top:0" data-act="shareHub">Shared lists${sharedShops().length ? ` (${sharedShops().length})` : ''}</button>`
     + `<button type="button" class="btn wide" data-act="askName">Your name: ${myName() ? esc(myName()) : 'not set'}</button>`
+    + `<h3 class="sh-label">Meals</h3><button type="button" class="btn wide" style="margin-top:0" data-act="weekStart">Week starts on ${JS_DAYS[weekStart()]}</button>`
     + (sharingConfigured() ? '<h3 class="sh-label">Moving</h3><button type="button" class="btn wide" style="margin-top:0" data-act="movePaste">Bring lists from another phone or address</button>'
        + '<button type="button" class="btn wide" data-act="moveStart">Send my lists to another phone or address</button>' : '')
     + `<h3 class="sh-label">Recently removed and cleared</h3>${remHtml}`
@@ -2102,6 +2103,7 @@ sheet.addEventListener('click', e => {
     case 'showCode': openShowCode(b.dataset.shop || (shop && shop.id)); break;
     case 'makeShared': if (shop) makeShared(shop, b); break;
     case 'askName': maybeAskName(); break;
+    case 'weekStart': openWeekStart(); break;
     case 'promptDelete':
       if (!promptDel) break;
       if (b.dataset.armed) { const f = promptDel; promptDel = null; f(); }
@@ -3697,9 +3699,24 @@ if (!state.pantry || typeof state.pantry !== 'object') state.pantry = {};
 const pad2 = n => String(n).padStart(2, '0');
 const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const keyDate = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
-function mondayOf(d){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
-function weekDays(offset){ const m = mondayOf(new Date()); m.setDate(m.getDate() + offset * 7); return [...Array(7)].map((_, i) => { const d = new Date(m); d.setDate(m.getDate() + i); return d; }); }
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// Which day the week starts on: 1 Monday (default), 0 Sunday, 6 Saturday. Shared through the meal plan.
+const WEEK_STARTS = [[6, 'Saturday'], [0, 'Sunday'], [1, 'Monday']];
+const weekStart = () => [0, 1, 6].includes(state.weekStart) ? state.weekStart : 1;
+function weekStartOf(d){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() - weekStart() + 7) % 7)); return x; }
+function weekDays(offset){ const m = weekStartOf(new Date()); m.setDate(m.getDate() + offset * 7); return [...Array(7)].map((_, i) => { const d = new Date(m); d.setDate(m.getDate() + i); return d; }); }
+const JS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dayName = d => JS_DAYS[d.getDay()];
+function setWeekStart(v){
+  if (![0, 1, 6].includes(v) || v === weekStart()) return;
+  state.weekStart = v; save(); render();
+  const lid = mealPlanId();
+  if (lid && fb) fb.fs.setDoc(listRef(lid), { weekStart:v, updatedAt:Date.now() }, { merge:true }).catch(() => {});
+}
+function openWeekStart(){
+  openSheet('<h2>Week starts on</h2><p class="sub">How the Meals tab lays out each week. Everyone on the meal plan sees the same.</p>'
+    + `<div class="daychips">${WEEK_STARTS.map(([v, n]) => `<button type="button" class="chip" data-mact="wstart" data-v="${v}" aria-pressed="${v === weekStart()}">${n}</button>`).join('')}</div>`,
+    { type:'weekStart' });
+}
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const shortDate = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const mealById = id => state.meals.find(m => m.id === id);
@@ -3746,9 +3763,16 @@ function startMealSync(){
   const lid = mealPlanId();
   if (MS && MS.listId === lid) return;
   if (MS && MS.unsub) { try { MS.unsub(); } catch(e) {} }
+  if (MS && MS.unsubMeta) { try { MS.unsubMeta(); } catch(e) {} }
   MS = null;
   if (!lid || !fb) return;
   const ms = MS = { listId:lid, known:new Map(), ready:false, error:null, unsub:null, up:new Set() };
+  ms.unsubMeta = fb.fs.onSnapshot(listRef(lid), snap => {
+    if (MS !== ms || !snap.exists()) return;
+    const v = snap.data() || {};
+    if ([0, 1, 6].includes(v.weekStart) && v.weekStart !== state.weekStart) { state.weekStart = v.weekStart; save(); if (view === 'meals') { renderMeals(); renderHeader(); } }
+    else if (v.weekStart === undefined && state.weekStart !== undefined) fb.fs.setDoc(listRef(lid), { weekStart:weekStart() }, { merge:true }).catch(() => {});
+  }, () => {});
   ms.unsub = fb.fs.onSnapshot(fb.fs.collection(fb.db, 'lists', lid, 'meals'), { includeMetadataChanges:true }, snap => {
     if (MS !== ms) return;
     ms.error = null;
@@ -3822,7 +3846,7 @@ function renderMeals(){
     + sync
     + days.map((d, i) => {
         const k = dayKey(d), meals = state.meals.filter(m => m.date === k).sort((a, b) => (whoRank(whoOf(a)) - whoRank(whoOf(b))) || ((a.order || 0) - (b.order || 0)));
-        return `<section class="day${k === today ? ' today' : ''}${k < today ? ' past' : ''}"><div class="dayhead"><span>${DAY_NAMES[i]}<small>${shortDate(d)}</small></span>`
+        return `<section class="day${k === today ? ' today' : ''}${k < today ? ' past' : ''}"><div class="dayhead"><span>${dayName(d)}<small>${shortDate(d)}</small></span>`
           + `<button type="button" class="dayadd" data-mact="add" data-date="${k}">+ Add</button></div>`
           + meals.map(m => {
               const info = [byOther(m) && m.addedBy ? esc(m.addedBy) : '', m.ing ? 'ingredients in' : (m.imgs.length ? `${m.imgs.length} ${m.imgs.length === 1 ? 'picture' : 'pictures'}` : '')].filter(Boolean).join(' · ');
@@ -3833,7 +3857,8 @@ function renderMeals(){
             }).join('')
           + '</section>';
       }).join('')
-    + (inWeek.length ? `<button type="button" class="btn primary wide weekbtn" data-mact="ingWeek">Ingredients for the week</button>` : '');
+    + (inWeek.length ? `<button type="button" class="btn primary wide weekbtn" data-mact="ingWeek">Ingredients for the week</button>` : '')
+    + `<p class="syncnote" style="text-align:center;margin:14px 0 6px">Weeks start on ${JS_DAYS[weekStart()]} · <button type="button" class="linkbtn" data-mact="wsheet">Change</button></p>`;
   hydrateImages(el);
 }
 $('#mealsView').addEventListener('click', e => {
@@ -3843,6 +3868,7 @@ $('#mealsView').addEventListener('click', e => {
   else if (a === 'weekNow') { mealWeek = 0; renderMeals(); renderHeader(); }
   else if (a === 'add') openMealEdit(null, b.dataset.date);
   else if (a === 'open') openMeal(b.dataset.id);
+  else if (a === 'wsheet') openWeekStart();
   else if (a === 'mshare') createMealPlan(b);
   else if (a === 'mcode') openMealCode();
   else if (a === 'ingWeek') openIngredients(state.meals.filter(m => weekDays(mealWeek).some(d => dayKey(d) === m.date)).map(m => m.id));
@@ -3856,7 +3882,7 @@ async function createMealPlan(btn){
     await loadFirebase();
     await moveOldMeals();
     const listId = newListId();
-    await withTimeout(fb.fs.setDoc(listRef(listId), { name:'Meal plan', kind:'meals', createdAt:Date.now(), updatedAt:Date.now() }), 12000);
+    await withTimeout(fb.fs.setDoc(listRef(listId), { name:'Meal plan', kind:'meals', weekStart:weekStart(), createdAt:Date.now(), updatedAt:Date.now() }), 12000);
     state.mealPlan = { listId, joinedAt:Date.now() };
     save(); render(); openMealCode();
   } catch(e) {
@@ -3911,7 +3937,7 @@ async function moveOldMeals(){
 function openMeal(id, refresh){
   const m = mealById(id); if (!m) { if (refresh) closeSheet(); return; }
   const d = keyDate(m.date);
-  const html = `<h2>${esc(m.name)}</h2><p class="sub">${whoOf(m) ? (whoOf(m) === 'kids' ? 'For the kids · ' : 'For us · ') : ''}${DAY_NAMES[(d.getDay() + 6) % 7]} ${shortDate(d)}${byOther(m) && m.addedBy ? ` · added by ${esc(m.addedBy)}` : ''}</p>`
+  const html = `<h2>${esc(m.name)}</h2><p class="sub">${whoOf(m) ? (whoOf(m) === 'kids' ? 'For the kids · ' : 'For us · ') : ''}${dayName(d)} ${shortDate(d)}${byOther(m) && m.addedBy ? ` · added by ${esc(m.addedBy)}` : ''}</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-mact="edit">Edit</button>'
     + '<button type="button" class="btn primary" data-mact="ing">Ingredients to list</button></div>'
     + '<button type="button" class="btn wide" data-mact="again">Plan again</button>'
@@ -3938,7 +3964,7 @@ function renderMealEdit(fresh){
   if (!fresh) { const f = sheet.querySelector('form[data-mform="meal"]'); if (f) { dr.name = f.name.value; dr.note = f.note.value; } }
   const days = dr.again ? weekDays(0).concat(weekDays(1)) : weekDays(mealWeek);
   const chips = days.map((d, i) => { const k = dayKey(d); return (dr.again && i === 7 ? '<span style="flex-basis:100%;height:0"></span>' : '')
-    + `<button type="button" class="chip" data-mact="day" data-date="${k}" aria-pressed="${k === dr.date}">${DAY_NAMES[i % 7].slice(0, 3)} ${d.getDate()}</button>`; }).join('');
+    + `<button type="button" class="chip" data-mact="day" data-date="${k}" aria-pressed="${k === dr.date}">${dayName(d).slice(0, 3)} ${d.getDate()}</button>`; }).join('');
   const html = `<h2>${dr.id ? 'Edit meal' : dr.again ? 'Plan it again' : 'Add a meal'}</h2>`
     + `<form data-mform="meal" autocomplete="off"><input class="field" name="name" type="text" maxlength="80" enterkeyhint="done" autocapitalize="sentences" placeholder="What's for tea? e.g. Pulled pork tacos" value="${esc(dr.name)}" aria-label="Meal name">`
     + `<h3 class="sh-label">Day</h3><div class="daychips">${chips}</div>`
@@ -4107,6 +4133,7 @@ sheet.addEventListener('click', async e => {
   else if (a === 'ingToggle') { const r = ingCtx.rows[+b.dataset.i]; r.on = !r.on; renderIngCheck(); }
   else if (a === 'ingShop') { ingCtx.shop = b.dataset.s; renderIngCheck(); }
   else if (a === 'ingAdd') addIngredients();
+  else if (a === 'wstart') { setWeekStart(+b.dataset.v); sheet.querySelectorAll('[data-mact="wstart"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }
   else if (a === 'mcopy') copyText(ctx.code);
   else if (a === 'msend') { const text = `Join our meal plan in Virtual Trolley. Copy this whole message, open Virtual Trolley, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text); }
   else if (a === 'mleave') {

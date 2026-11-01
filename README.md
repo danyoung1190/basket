@@ -29,7 +29,7 @@ Changes appear on the other phones within a second or two. With no signal, chang
 
 ## Meal plan
 
-The **Meals** tab (first along the top) shows the week, Monday to Sunday. Tap **+ Add** on a day, name the meal, say who it's for (Everyone, Us or Kids), and add the recipe screenshots.
+The **Meals** tab (first along the top) shows the week. It starts on Monday unless you change it to Saturday or Sunday (the link at the bottom of the Meals tab, or Settings > Meals); everyone on the meal plan sees the same. Tap **+ Add** on a day, name the meal, say who it's for (Everyone, Us or Kids), and add the recipe screenshots.
 
 **Sharing the meal plan** is separate from the shopping lists. Tap **Share the meal plan** at the top of the Meals tab to get its own code and QR. The other phone joins the usual way (+ Add, Join a shared list), and the app knows it's a meal plan. People on your shopping lists don't see meals unless they have this code.
 
