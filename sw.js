@@ -1,6 +1,8 @@
 // Trolley service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'trolley-v24';
+const CACHE = 'trolley-v25';
+// The screenshot reader (about 7 MB) is kept across app updates. Its folder name carries its version.
+const OCR_CACHE = 'trolley-ocr';
 const ASSETS = [
   './',
   './index.html',
@@ -20,7 +22,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== CACHE + '-sdk').map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== CACHE + '-sdk' && k !== OCR_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -42,6 +44,16 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (url.pathname.includes('/ocr/')) {
+    event.respondWith(caches.open(OCR_CACHE).then(async cache => {
+      const hit = await cache.match(req, { ignoreSearch: true });
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    }));
+    return;
+  }
   const isPage = req.mode === 'navigate';
   event.respondWith(
     caches.open(CACHE).then(async cache => {

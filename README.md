@@ -33,7 +33,7 @@ The **Meals** tab (first along the top) shows the week. It starts on Monday unle
 
 **Sharing the meal plan** is separate from the shopping lists. Tap **Share the meal plan** at the top of the Meals tab to get its own code and QR. The other phone joins the usual way (+ Add, Join a shared list), and the app knows it's a meal plan. People on your shopping lists don't see meals unless they have this code.
 
-To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. Paste the recipe text: in Photos, hold on the text in the screenshot, tap **Select All**, then **Copy**. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
+To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. The app reads the screenshots itself, on the phone, and goes straight to a checklist; the text is saved on the meal so the other phone doesn't need to read it again. The reader (about 7 MB) downloads the first time it's used and then works with no signal. If it can't read something, **Change the recipe text** lets you fix or paste it. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
 
 Old weeks are kept for good: use the arrows to look back. **Plan again** on any meal copies it, screenshots and ingredients included, to a day this week or next. The tab can be hidden in Settings > Tabs at the top.
 
@@ -54,6 +54,11 @@ Everything comes across: private shops, hidden tabs, history and shared lists. T
 **Firebase.** Project `shopping-list-8c011`, with Anonymous sign-in enabled and the Firestore rules from `firestore.rules` pasted into Firestore > Rules > Publish. The rules need the `transfers` section for moving lists. `firebase-config.js` holds the web app config. Those values identify the project and are not secret.
 
 **Releasing a change.** Edit the files, change `CACHE` in `sw.js` (for example `trolley-v13`), and commit. Phones pick up the new version the next time the app opens with signal, sometimes after closing and reopening it once. Settings shows the version number at the bottom.
+
+## Credits
+
+- Screenshot reading: [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0), in `ocr/v5`.
+- QR codes: qrcode-generator (MIT). QR scanning: jsQR (Apache-2.0).
 
 ## Things to know
 
