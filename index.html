@@ -471,7 +471,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.6.1';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1187,7 +1187,7 @@ function renderHeader(){
   $('#btnShare').hidden = false;
   const shop = currentShop();
   const items = tabItems();
-  const todo = items.filter(i => !i.done).length, got = items.length - todo;
+  const todo = items.filter(i => !i.done).length, got = items.filter(i => i.done).reduce((n, i) => n + qtyOf(i), 0);
   $('#title').textContent = shop ? shop.name : 'Shopping list';
   $('#subtitle').textContent = todo
     ? `${todo} to get${got ? `, ${got} in the trolley` : ''}`
@@ -2786,6 +2786,10 @@ const GOOD_COLOURS = { 'Fruit & veg':'#6DBE5A', 'Bakery':'#D9A05B', 'Meat & poul
   'Snacks & sweets':'#B05BD9', 'Soft drinks':'#3F8CFF', 'Beer, wine & spirits':'#8E2B45', 'Household':'#7FA7D9', 'Toiletries & beauty':'#F0A6CA',
   'Health & medicine':'#5CC3B0', 'Baby':'#FFD38A', 'Pets':'#9C7F5F' };
 const trolleyItems = () => tabItems().filter(i => i.done && !flying.has(i.id)).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
+// "Milk ×10" is ten things in the trolley. Drawings stop at 12 per line so it stays readable; the count stays true.
+const qtyOf = i => Math.max(1, Math.round(i.qty || 1));
+const UNITS_DRAWN = 12, PILE = 3, MAX_PILES = 32;
+const trolleyCount = () => trolleyItems().reduce((n, i) => n + qtyOf(i), 0);
 // ----- Trolley drawing (SVG, redrawn to the real screen width) -----
 const TH = 150;               // drawing height (drawn at 64%: 96px on screen)
 const TSCALE = 0.64;
@@ -2802,8 +2806,9 @@ function trolleyGeom(W){
 function goodSlot(i, W){
   const g = trolleyGeom(W), step = 40;
   const perRow = Math.max(4, Math.floor((g.inR - g.inL) / step));
-  const row = Math.floor(i / perRow) % 2;
-  return { x: g.inL + 24 + (i % perRow) * step + (row ? step / 2 : 0), back: row === 1 };
+  const layer = Math.floor(i / (perRow * 2)), j = i % (perRow * 2), row = Math.floor(j / perRow);
+  return { x: g.inL + 24 + (j % perRow) * step + (row ? step / 2 : 0) + (layer % 2 ? step / 4 : 0), back: row === 1,
+           layer, lift: Math.min(layer, 3) * 14 };   // a full trolley piles up above the rim
 }
 const SHAPES = { 'Fruit & veg':'fruit', 'Bakery':'bread', 'Meat & poultry':'tray', 'Fish & seafood':'tray', 'Dairy & eggs':'carton',
   'Cheese':'block', 'Chilled & deli':'tub', 'Frozen':'box', 'Herbs & spices':'spice', 'Pasta, rice & grains':'bag', 'Tins & jars':'tin',
@@ -3215,7 +3220,7 @@ const BY_NAME = [
 const BY_NAME_RE = BY_NAME.map(([k, f, c, x]) => [new RegExp('(^|\\s)(' + k + ')', 'i'), f, c, x]);
 function produceSvg(name, x, y, s, edge){ return D.generic_fruit(x, y, '#6DBE5A', undefined, s); }
 
-function packageSvg(it, x, newId){
+function packageSvg(it, x, newId, lift){
   const cat = categoryFor(it.name), shape = SHAPES[cat] || 'box', s = seedOf(it.id);
   const col = GOOD_COLOURS[cat] || '#F5A524', y = FLOOR, f = fold(it.name);
   let d = '';
@@ -3239,7 +3244,7 @@ function packageSvg(it, x, newId){
     default: d = D.box(x, y, col, 34 + s % 12);
   }
   // Goods are scaled up around the point they stand on.
-  return `<g class="good${it.id === newId ? ' landing' : ''}" data-id="${esc(it.id)}"><g transform="translate(${x} ${y}) scale(${GOOD_SCALE}) translate(${-x} ${-y})">${d}</g></g>`;
+  return `<g class="good${it.id === newId ? ' landing' : ''}" data-id="${esc(it.id)}"><g transform="translate(${x} ${y - (lift || 0)}) scale(${GOOD_SCALE}) translate(${-x} ${-y})">${d}</g></g>`;
 }
 function wiresSvg(g, back){
   // vertical wires follow the slanted ends; horizontal wires run along the side
@@ -3256,10 +3261,16 @@ function drawTrolley(newId){
   const svg = dock.querySelector('svg.trolley');
   const W = Math.max(320, Math.round((dock.getBoundingClientRect().width || window.innerWidth) / TSCALE));
   const g = trolleyGeom(W);
-  const items = trolleyItems();
-  const placed = items.map((it, i) => ({ it, slot:goodSlot(i, W) }));
-  const backRow = placed.filter(p => p.slot.back).map(p => packageSvg(p.it, p.slot.x, newId)).join('');
-  const frontRow = placed.filter(p => !p.slot.back).map(p => packageSvg(p.it, p.slot.x, newId)).join('');
+  // Several of one thing sit together in little fanned piles of up to three, one pile per slot
+  const piles = [];
+  trolleyItems().forEach(it => { const u = Math.min(UNITS_DRAWN, qtyOf(it)); for (let s = 0; s < u; s += PILE) piles.push({ it, n:Math.min(PILE, u - s) }); });
+  const placed = [];
+  piles.slice(-MAX_PILES).forEach((p, i) => { const slot = goodSlot(i, W);
+    for (let k = 0; k < p.n; k++) { const up = p.n - 1 - k; placed.push({ it:p.it, x:slot.x + up * 8, lift:slot.lift + up * 7, slot, k }); } });
+  // lower layers first, back row before front row, and the back of each pile before its front
+  placed.sort((a, b) => (a.slot.layer - b.slot.layer) || ((b.slot.back ? 1 : 0) - (a.slot.back ? 1 : 0)));
+  const backRow = placed.map(p => packageSvg(p.it, p.x, newId, p.lift)).join('');
+  const frontRow = '';
   const wheel = (cx, cy, r, back) => `<g class="wheel${back ? ' back' : ''}"><circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--tyre)" opacity="${back ? .55 : 1}"/>`
     + `<circle cx="${cx}" cy="${cy}" r="${r * .38}" fill="var(--chrome-mid)"/><path d="M${cx - r * .7} ${cy} H${cx + r * .7}" stroke="var(--chrome-hi)" stroke-width="1.2" opacity=".6"/></g>`;
   const fork = (x) => `<path d="M${x} 124 L${x + 3} 136" stroke="var(--chrome-lo)" stroke-width="3" stroke-linecap="round"/>`;
@@ -3287,9 +3298,13 @@ function drawTrolley(newId){
       ${fork(g.botL + 12)}${fork(g.botR - 10)}
       ${wheel(g.botL + 15, 140, 7.5, false)}${wheel(g.botR - 7, 140, 7.5, false)}
     </g>`;
-  const landed = svg.querySelector('.landing');
-  if (landed && landed.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    landed.animate([{ transform:'translateY(-58px) rotate(-8deg)', opacity:.7 }, { transform:'translateY(2px) scaleY(.92)', offset:.72, opacity:1 }, { transform:'translateY(-3px)', offset:.86 }, { transform:'none' }], { duration:340, easing:'ease-in' });
+  const landed = [...svg.querySelectorAll('.landing')];
+  if (landed.length && landed[0].animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const gap = landed.length > 6 ? 55 : 80;
+    landed.forEach((el, k) => el.animate([{ transform:'translateY(-58px) rotate(-8deg)', opacity:k ? 0 : .7 }, { transform:'translateY(-50px) rotate(-8deg)', opacity:.8, offset:.08 },
+      { transform:'translateY(2px) scaleY(.92)', offset:.72, opacity:1 }, { transform:'translateY(-3px)', offset:.86 }, { transform:'none' }],
+      { duration:340, delay:k * gap, easing:'ease-in', fill:'backwards' }));
+    if (landed.length > 2) setTimeout(bumpTrolley, (landed.length - 1) * gap + 300);   // the last of the lot lands
   }
 }
 function renderTrolley(newId){
@@ -3298,7 +3313,7 @@ function renderTrolley(newId){
   document.body.classList.toggle('with-dock', show);
   layer.classList.toggle('with-trolley', show);
   if (!show) return;
-  const n = trolleyItems().length;
+  const n = trolleyCount();
   dock.querySelector('.tcount').textContent = n ? String(n) : '';
   dock.querySelector('.hint').textContent = n ? 'in trolley' : 'Trolley';
   dock.querySelector('.hit').setAttribute('aria-label', n ? `Your trolley has ${n} ${n === 1 ? 'item' : 'items'}. Open it` : 'Your trolley is empty');
@@ -3327,7 +3342,8 @@ function flyToTrolley(row, item){
   const p = pill.getBoundingClientRect();
   // Aim at the spot along the rim where this item's package will stand.
   const scale = tsvg.height / TH;
-  const tx = tsvg.left + goodSlot(trolleyItems().length + flying.size, tsvg.width / scale).x * scale;
+  const drawn = Math.min(MAX_PILES, trolleyItems().reduce((n, i) => n + Math.ceil(Math.min(UNITS_DRAWN, qtyOf(i)) / PILE), 0));
+  const tx = tsvg.left + goodSlot(drawn + flying.size, tsvg.width / scale).x * scale;
   const ty = tsvg.top + (RIM - 14) * scale;
   const dx = tx - (p.left + p.width / 2), dy = ty - (p.top + p.height / 2);
   flying.add(item.id); renderTrolley();
