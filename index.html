@@ -86,6 +86,13 @@ main{max-width:640px; margin:0 auto}
   -webkit-appearance:none; appearance:none;
 }
 .field:focus{border-color:var(--accent)}
+#scanBtn{flex:none; width:50px; height:50px; border-radius:14px; border:0; background:var(--chip); color:var(--accent); display:grid; place-items:center}
+#scanBtn svg{width:24px; height:24px}
+#scanBtn[hidden]{display:none}
+.scanbox.bar .frame{inset:34% 10%; border-radius:10px}
+.scanlog{margin:10px 0 0; min-height:22px; font-weight:600; text-align:center}
+.picks{display:flex; flex-direction:column; gap:8px; margin-top:12px}
+.picks .btn{min-height:52px; font-size:17px; padding:12px 16px; border-radius:14px}
 #addBtn{flex:none; width:50px; height:50px; border-radius:14px; border:0; background:var(--accent); color:#fff; display:grid; place-items:center}
 #addBtn svg{width:24px; height:24px}
 
@@ -372,6 +379,13 @@ form[data-mform] .field{width:100%; display:block}
 .meal small{display:block; color:var(--muted); font-size:13px; margin-top:2px}
 .meal .newtag{margin-left:6px; padding:2px 6px; border-radius:7px; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); font:700 11px/1.2 var(--ui)}
 .weekbtn{margin:16px 0 8px}
+.libbtn{display:flex; align-items:center; justify-content:center; gap:8px; margin:8px 0 2px}
+.libbtn svg{width:18px; height:18px}
+.libbtn .n{min-width:22px; padding:1px 7px; border-radius:11px; background:var(--chip); color:var(--muted); font-size:13px}
+.librow{display:flex; align-items:center; gap:8px}
+.librow .meal{flex:1; min-width:0}
+.librow .meal strong{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.libagain{flex:none; min-height:40px; padding:0 14px}
 .meal .who{display:inline-block; margin-right:7px; padding:2px 7px; border-radius:7px; font:700 11px/1.3 var(--ui); vertical-align:2px; background:var(--chip); color:var(--muted)}
 .meal .who.kids{background:color-mix(in srgb, #3B82C4 16%, transparent); color:#2F6EA8}
 @media (prefers-color-scheme:dark){ .meal .who.kids{color:#8CC0EE} }
@@ -440,6 +454,9 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
   <div id="install"></div>
   <form id="addForm" autocomplete="off">
     <input id="addInput" class="field" type="text" enterkeyhint="enter" autocapitalize="sentences" autocorrect="on" spellcheck="true" placeholder="Add to your list" aria-label="Add an item" maxlength="80">
+    <button id="scanBtn" type="button" aria-label="Scan a barcode" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>
+    </button>
     <button id="addBtn" type="submit" aria-label="Add item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
     </button>
@@ -471,7 +488,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.6.1';
+const APP_VERSION = '2.7.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1648,6 +1665,7 @@ const sheet = $('#sheet'), backdrop = $('#backdrop');
 let sheetCtx = null, closeTok = 0, lastHoldAt = 0;
 function openSheet(html, ctx){
   if (typeof stopScan === 'function') stopScan();
+  if (typeof stopBarcode === 'function' && bscan) stopBarcode();
   closeTok++;
   sheet.innerHTML = '<div class="sheet-top"><div class="grabber" aria-hidden="true"></div>'
     + `<button type="button" class="sheet-close" data-act="cancel" aria-label="Close">${ICON_X}</button></div>` + html;
@@ -1661,6 +1679,7 @@ function openSheet(html, ctx){
 }
 function closeSheet(){
   if (typeof stopScan === 'function') stopScan();
+  if (typeof stopBarcode === 'function' && bscan) stopBarcode();
   if (!sheetCtx) return;
   sheetCtx = null;
   sheet.classList.remove('open'); backdrop.classList.remove('open');
@@ -3874,6 +3893,7 @@ function renderMeals(){
     + `<div class="wk">${label}<small>${shortDate(days[0])} to ${shortDate(days[6])}</small></div>`
     + `<button type="button" class="mini" data-mact="week" data-d="1" ${mealWeek >= 3 ? 'disabled' : ''} aria-label="Next week">${ICON_UP.replace('<svg', '<svg style="transform:rotate(90deg)"')}</button></div>`
     + sync
+    + (libraryOf().length ? `<button type="button" class="btn wide libbtn" data-mact="lib">${ICON_BOOK}Recipes you've had <span class="n">${libraryOf().length}</span></button>` : '')
     + days.map((d, i) => {
         const k = dayKey(d), meals = state.meals.filter(m => m.date === k).sort((a, b) => (whoRank(whoOf(a)) - whoRank(whoOf(b))) || ((a.order || 0) - (b.order || 0)));
         return `<section class="day${k === today ? ' today' : ''}${k < today ? ' past' : ''}"><div class="dayhead"><span>${dayName(d)}<small>${shortDate(d)}</small></span>`
@@ -3899,10 +3919,63 @@ $('#mealsView').addEventListener('click', e => {
   else if (a === 'add') openMealEdit(null, b.dataset.date);
   else if (a === 'open') openMeal(b.dataset.id);
   else if (a === 'wsheet') openWeekStart();
+  else if (a === 'lib') openLibrary();
   else if (a === 'mshare') createMealPlan(b);
   else if (a === 'mcode') openMealCode();
   else if (a === 'ingWeek') openIngredients(state.meals.filter(m => weekDays(mealWeek).some(d => dayKey(d) === m.date)).map(m => m.id));
 });
+
+/* Recipe library: every meal ever planned, one entry per name */
+const ICON_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7"/></svg>';
+function libraryOf(){
+  const today = dayKey(new Date()), map = new Map();
+  state.meals.forEach(m => {
+    const k = fold(m.name); if (!k) return;
+    let e = map.get(k);
+    if (!e) map.set(k, e = { key:k, name:m.name, times:0, last:null, next:null, best:m });
+    if (m.date <= today) { e.times++; if (!e.last || m.date > e.last) { e.last = m.date; e.name = m.name; } }
+    else if (!e.next || m.date < e.next) e.next = m.date;
+    // the copy to plan again from: the one with the most in it (pictures, then ingredients), newest first
+    const score = x => (x.imgs.length ? 2 : 0) + (x.ing ? 1 : 0);
+    if (score(m) > score(e.best) || (score(m) === score(e.best) && m.date > e.best.date)) e.best = m;
+  });
+  return [...map.values()];
+}
+function agoText(k){
+  const days = Math.round((keyDate(dayKey(new Date())) - keyDate(k)) / 864e5);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+  const mo = Math.round(days / 30.4); return mo < 12 ? `${mo} months ago` : `over a year ago`;
+}
+let libSort = 'stale', libQuery = '';
+function libraryRows(){
+  const q = fold(libQuery);
+  let rows = libraryOf().filter(e => !q || e.key.includes(q));
+  if (libSort === 'stale') rows.sort((a, b) => (!!a.next - !!b.next) || ((a.last || '9') < (b.last || '9') ? -1 : (a.last || '9') > (b.last || '9') ? 1 : 0));
+  else if (libSort === 'often') rows.sort((a, b) => b.times - a.times || a.name.localeCompare(b.name));
+  else rows.sort((a, b) => a.name.localeCompare(b.name));
+  if (!rows.length) return `<p class="note">${q ? 'Nothing matches that.' : 'No meals yet.'}</p>`;
+  return rows.map(e => {
+    const when = e.next ? `Planned for ${dayName(keyDate(e.next)).slice(0, 3)} ${shortDate(keyDate(e.next))}` : e.last ? `Last had ${agoText(e.last)}` : '';
+    const times = e.times > 1 ? ` · had ${e.times} times` : '';
+    return `<div class="librow"><button type="button" class="meal" data-mact="libOpen" data-id="${esc(e.best.id)}">`
+      + (e.best.imgs[0] ? `<span class="thumb" data-img="${esc(e.best.imgs[0])}">${ICON_PHOTO}</span>` : `<span class="thumb">${ICON_MEALS}</span>`)
+      + `<span><strong>${esc(e.name.charAt(0).toUpperCase() + e.name.slice(1))}</strong><small>${when}${times}</small></span></button>`
+      + `<button type="button" class="btn libagain" data-mact="libAgain" data-id="${esc(e.best.id)}">Plan</button></div>`;
+  }).join('');
+}
+function openLibrary(){
+  const sorts = [['stale', 'Not had for a while'], ['often', 'Most often'], ['az', 'A to Z']];
+  openSheet(`<h2>Recipes you've had</h2><p class="sub">Every meal you've planned. Tap Plan to put one on a day this week or next.</p>`
+    + `<input class="field" type="search" data-libq placeholder="Search, e.g. chilli" value="${esc(libQuery)}" autocomplete="off" aria-label="Search recipes">`
+    + `<div class="daychips" style="margin:10px 0 4px">${sorts.map(([v, l]) => `<button type="button" class="chip" data-mact="libSort" data-v="${v}" aria-pressed="${v === libSort}">${l}</button>`).join('')}</div>`
+    + `<div data-liblist>${libraryRows()}</div>`, { type:'library' });
+  hydrateImages(sheet);
+}
+function refreshLibrary(){ const el = sheet.querySelector('[data-liblist]'); if (el) { el.innerHTML = libraryRows(); hydrateImages(el); } }
+sheet.addEventListener('input', e => { if (e.target.matches('[data-libq]')) { libQuery = e.target.value; refreshLibrary(); } });
 
 /* Sharing the meal plan */
 async function createMealPlan(btn){
@@ -4123,6 +4196,155 @@ function renderReading(n, total, loading){
   else openSheet(html, { type:'reading' });
 }
 
+
+/* Scan a barcode to add it. ZXing (Apache-2.0) reads the code from the camera; Open Food Facts (free, open data)
+   says what it is; the app's own catalogue turns "Heinz Baked Beanz 415g" into "Baked beans". Every barcode she
+   confirms is remembered on the phone, so the second time is instant and needs no signal. */
+const ZXING_SRC = 'vendor/zxing-0.21.3.min.js';
+let zxingP = null, bscan = null;
+function loadZXing(){
+  return zxingP || (zxingP = new Promise((res, rej) => {
+    if (window.ZXing) return res(window.ZXing);
+    const sc = document.createElement('script'); sc.src = ZXING_SRC;
+    sc.onload = () => res(window.ZXing); sc.onerror = () => { zxingP = null; rej(new Error('offline')); };
+    document.head.appendChild(sc);
+  }));
+}
+// Sharpen across the bars (they're vertical), which rescues slightly soft shots of barcodes on busy packaging
+function sharpenBars(c){
+  const g = c.getContext('2d', { willReadFrequently:true }), w = c.width, h = c.height, d = g.getImageData(0, 0, w, h), p = d.data, y = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < p.length; i += 4, j++) y[j] = .299 * p[i] + .587 * p[i + 1] + .114 * p[i + 2];
+  for (let r = 0; r < h; r++) for (let x = 2; x < w - 2; x++) {
+    const j = r * w + x, blur = (y[j - 2] + y[j - 1] + y[j] + y[j + 1] + y[j + 2]) / 5;
+    let v = y[j] + 1.6 * (y[j] - blur); v = v < 0 ? 0 : v > 255 ? 255 : v; const k = j * 4; p[k] = p[k + 1] = p[k + 2] = v;
+  }
+  g.putImageData(d, 0, 0);
+}
+function barcodeReader(Z){
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const r = new Z.MultiFormatReader(); r.setHints(hints);
+  const once = (c, Bin) => { try { return r.decode(new Z.BinaryBitmap(new Bin(new Z.HTMLCanvasElementLuminanceSource(c)))).getText(); } catch(e) { return null; } };
+  // as it is first; if that fails, sharpened
+  return canvas => once(canvas, Z.HybridBinarizer) || (sharpenBars(canvas), once(canvas, Z.GlobalHistogramBinarizer));
+}
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) $('#scanBtn').hidden = false;
+$('#scanBtn').addEventListener('click', () => openBarcodeScan());
+function stopBarcode(){ if (!bscan) return; cancelAnimationFrame(bscan.raf); if (bscan.stream) bscan.stream.getTracks().forEach(t => t.stop()); bscan = null; }
+let lastBarcode = { code:'', seen:0 };
+async function openBarcodeScan(note){
+  stopBarcode();
+  const target = currentShop();
+  openSheet('<h2>Scan a barcode</h2>'
+    + `<p class="sub">Point the camera at the barcode on a packet or jar. It goes on ${target ? esc(target.name) : 'your list'}. Keep scanning to add more.</p>`
+    + '<div class="scanbox bar"><video playsinline muted autoplay></video><div class="frame"></div><p>Looking for a barcode</p></div>'
+    + `<p class="scanlog">${note ? esc(note) : ''}</p>`
+    + '<div class="sheet-actions"><button type="button" class="btn primary" data-mact="bdone">Done</button></div>', { type:'barcode' });
+  const me = bscan = { stream:null, raf:0, last:0, lastCode:'', lastAt:0 };
+  try {
+    const [stream, Z] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false }),
+      loadZXing()
+    ]);
+    if (bscan !== me) { stream.getTracks().forEach(t => t.stop()); return; }
+    me.stream = stream;
+    const video = sheet.querySelector('.scanbox video'); video.srcObject = stream; await video.play().catch(() => {});
+    const read = barcodeReader(Z), canvas = document.createElement('canvas'), g = canvas.getContext('2d', { willReadFrequently:true });
+    const tick = t => {
+      if (bscan !== me) return;
+      me.raf = requestAnimationFrame(tick);
+      if (me.paused || t - me.last < 150 || !video.videoWidth) return;
+      me.last = t;
+      // the middle band of the picture, where she holds the barcode, at full sharpness (shrinking it loses thin bars)
+      const sw = video.videoWidth, sh = Math.round(video.videoHeight * .5), sy = Math.round(video.videoHeight * .25);
+      const cw = Math.min(1280, sw); canvas.width = cw; canvas.height = Math.round(sh * cw / sw);
+      g.drawImage(video, 0, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      const code = read(canvas), now = Date.now();
+      if (!code) return;
+      // the same product only counts again once it has left the camera's view for a moment
+      const same = code === lastBarcode.code && now - lastBarcode.seen < 1500;
+      lastBarcode = { code, seen:now };
+      if (same) return;
+      if (navigator.vibrate) navigator.vibrate(30);
+      gotBarcode(code);
+    };
+    me.raf = requestAnimationFrame(tick);
+  } catch(e) {
+    if (bscan !== me) return;
+    stopBarcode();
+    const p = sheet.querySelector('.scanbox p');
+    if (p) p.textContent = e && e.message === 'offline' ? 'The scanner needs signal the first time.' : 'Camera not available. Allow camera access for this app in Settings.';
+  }
+}
+function scanLog(t){ const el = sheet.querySelector('.scanlog'); if (el) el.textContent = t; }
+function addScanned(name){
+  snapshot();
+  const shopId = tabShopId(), shop = currentShop();
+  // a second jar of the same thing makes it ×2 rather than a second line
+  const have = state.items.find(i => !i.done && i.shopId === shopId && fold(i.name) === fold(name));
+  let label = name;
+  if (have) { have.qty = Math.min(99, qtyOf(have) + 1); have.updatedAt = Date.now(); label = `${have.name} ×${have.qty}`; }
+  else addItem(name, { quiet:true });
+  save(); render();
+  toast(`Added ${label}`, true);
+  return { where: shop ? shop.name : 'your list', label };
+}
+async function gotBarcode(code){
+  state.barcodes = state.barcodes || {};
+  const known = state.barcodes[code];
+  if (known) { const r = addScanned(known); scanLog(`Added ${r.label} to ${r.where}`); return; }
+  // pause the camera loop while we ask
+  const me = bscan; if (me) me.paused = true;
+  scanLog('Looking it up...');
+  let info = null;
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 7000);
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_en,brands,generic_name,generic_name_en,categories_tags_en,quantity`, { signal:ctl.signal });
+    clearTimeout(tm);
+    const j = res.ok || res.status === 404 ? await res.json() : null;
+    if (j && j.status === 1 && j.product) info = j.product;
+  } catch(e) { info = undefined; }   // undefined: couldn't ask (no signal); null: not known
+  stopBarcode();
+  barcodeChoice(code, info);
+}
+function cleanProductName(s){ return clean(String(s || '').replace(/\b\d+(\.\d+)?\s?(g|kg|ml|l|cl|x)\b/gi, ' ').replace(/\s+/g, ' ')).slice(0, 48); }
+function barcodeChoice(code, info){
+  const opts = [];
+  if (info) {
+    const brand = String(info.brands || '').split(',')[0].trim();
+    const prod = cleanProductName(info.product_name_en || info.product_name);
+    const text = [info.generic_name_en, info.generic_name, info.product_name_en, info.product_name, ...(info.categories_tags_en || []).map(t => String(t).replace(/^en:/, '').replace(/-/g, ' ')).reverse()].filter(Boolean).join(' . ');
+    const foods = findFoods(text, true);
+    const best = foods.length ? foods.slice().sort((a, b) => b.length - a.length)[0] : null;
+    if (best) opts.push(best);
+    const full = prod ? (brand && !fold(prod).includes(fold(brand)) ? `${brand} ${prod}` : prod) : '';
+    if (full && (!best || fold(full) !== fold(best))) opts.push(full);
+  }
+  const heading = info ? `Found: ${esc(cleanProductName([String(info.brands || '').split(',')[0], info.product_name_en || info.product_name].filter(Boolean).join(' ')) || 'a product')}`
+    : info === undefined ? "Couldn't look it up" : "This one isn't known yet";
+  const sub = info ? 'Add it as:' : info === undefined ? 'No signal right now. Type what it is and the app will remember this barcode.' : 'Type what it is and the app will remember this barcode.';
+  openSheet(`<h2>${heading}</h2><p class="sub">${sub}</p>`
+    + (opts.length ? `<div class="picks">${opts.map((o, i) => `<button type="button" class="btn ${i ? '' : 'primary'} wide" style="margin:0" data-mact="bpick" data-name="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '')
+    + `<form data-mform="bname" autocomplete="off" style="margin-top:14px"><input class="field" name="n" type="text" maxlength="80" enterkeyhint="done" autocapitalize="sentences" placeholder="${opts.length ? 'Or type your own name' : 'What is it? e.g. Baked beans'}" aria-label="Item name"></form>`
+    + '<div class="sheet-actions"><button type="button" class="btn" data-mact="bcancel">Skip</button><button type="button" class="btn primary" data-mact="bsave">Add</button></div>',
+    { type:'barcodeChoice', code });
+  if (!opts.length) setTimeout(() => { const i = sheet.querySelector('form[data-mform="bname"] input'); if (i) i.focus(); }, 350);
+}
+function rememberBarcode(code, name){
+  name = clean(name).slice(0, 80); if (!name) return;
+  state.barcodes = state.barcodes || {};
+  state.barcodes[code] = name;
+  const r = addScanned(name);
+  lastBarcode = { code, seen:Date.now() };   // the jar is probably still in front of the camera
+  openBarcodeScan(`Added ${r.label} to ${r.where}`);
+}
+sheet.addEventListener('submit', e => {
+  const f = e.target.closest('form[data-mform="bname"]'); if (!f) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const v = f.n.value; if (clean(v) && sheetCtx && sheetCtx.code) rememberBarcode(sheetCtx.code, v);
+}, true);
+
 /* Ingredients: read (or paste), check, send */
 let ingCtx = null;
 async function openIngredients(mealIds, forceRead){
@@ -4239,6 +4461,13 @@ sheet.addEventListener('click', async e => {
   else if (a === 'ingToggle') { const r = ingCtx.rows[+b.dataset.i]; r.on = !r.on; renderIngCheck(); }
   else if (a === 'ingShop') { ingCtx.shop = b.dataset.s; renderIngCheck(); }
   else if (a === 'ingAdd') addIngredients();
+  else if (a === 'libSort') { libSort = b.dataset.v; sheet.querySelectorAll('[data-mact="libSort"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); refreshLibrary(); }
+  else if (a === 'libOpen') openMeal(b.dataset.id);
+  else if (a === 'libAgain') { const m = mealById(b.dataset.id); if (m) { mealDraft = { id:null, again:true, date:dayKey(new Date()), name:m.name, note:m.note || '', ing:m.ing || '', imgs:m.imgs.slice(), who:whoOf(m) }; renderMealEdit(true); } }
+  else if (a === 'bdone') { stopBarcode(); closeSheet(); }
+  else if (a === 'bpick') rememberBarcode(ctx.code, b.dataset.name);
+  else if (a === 'bsave') { const i = sheet.querySelector('form[data-mform="bname"] input'); if (i && clean(i.value)) rememberBarcode(ctx.code, i.value); else toast('Type what it is, or pick one'); }
+  else if (a === 'bcancel') openBarcodeScan();
   else if (a === 'wstart') { setWeekStart(+b.dataset.v); sheet.querySelectorAll('[data-mact="wstart"]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }
   else if (a === 'mcopy') copyText(ctx.code);
   else if (a === 'msend') { const text = `Join our meal plan in Virtual Trolley. Copy this whole message, open Virtual Trolley, tap + Add, Join a shared list, then Paste a code.\n\n${ctx.code}`; if (navigator.share) navigator.share({ text }).catch(() => {}); else copyText(text); }

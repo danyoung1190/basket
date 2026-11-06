@@ -9,6 +9,7 @@ Live at **https://list-sharing.web.app**
 - **Add**: type in the box at the top. About 2,400 UK groceries are built in, and spelling mistakes are fine ("origano" finds Oregano). Things you've added before rank first. Add a quantity with "Chicken x4" or "4x chicken".
 - **Shops**: tap **+ Add** at the end of the tabs. Supermarkets start with 24 aisles in walking order (Fruit & veg, Bakery, Meat & poultry, Fish & seafood, Dairy & eggs, Cheese, Chilled & deli, Frozen, Herbs & spices, Pasta, rice & grains, Tins & jars, Sauces & condiments, Baking, Breakfast & spreads, Tea & coffee, World foods, Snacks & sweets, Soft drinks, Beer, wine & spirits, Household, Toiletries & beauty, Health & medicine, Baby, Pets). Items file themselves into the right aisle. Any other shop, and every shared list, gets aisles on its own as things are added. The List tab groups by aisle too. Empty aisles stay hidden, and an aisle you delete stays deleted. To delete an aisle, open the shop's settings and slide it to the left, then tap Delete.
 - **Move things around**: hold an item to send it to another shop, change its aisle or quantity, rename it or remove it. Hold the handle on the right for a moment, then drag to reorder. Whatever you change is remembered next time.
+- **Scan a barcode**: tap the barcode button next to the add box and point the camera at a packet or jar. The app looks it up (Open Food Facts), offers a plain name like "Baked beans", and remembers that barcode, so next time it's instant and works with no signal. A second jar of the same thing makes it ×2. Keep scanning to add a cupboard's worth.
 - **Tick off**: tap an item and it drops into the trolley at the bottom of the screen. "Milk ×10" puts ten in, and the trolley count shows how many things are in it. Swipe up on the trolley (or tap it) to see what's in it. Tap anything you put back to return it to the list. **Empty the trolley** clears it when you've finished. It needs two taps, and there's an Undo.
 - **Tabs at the top**: Settings > **Tabs at the top**, or long-press the List tab. Switch any tab off, including List and Meals, and reorder the rest. When anything is hidden, a small **“N hidden”** pill at the end of the tabs takes you straight back to the switches. Hidden shops keep their items and still appear when you hold an item to send it somewhere.
 - **Due again**: after something has been bought twice, the app learns how often you buy it and suggests it when it's due.
@@ -35,7 +36,7 @@ The **Meals** tab (first along the top) shows the week. It starts on Monday unle
 
 To get the ingredients onto the shopping list, open the meal and tap **Ingredients to list**. The app reads the screenshots itself, on the phone, and goes straight to a checklist; the text is saved on the meal so the other phone doesn't need to read it again. The reader (about 7 MB) downloads the first time it's used and then works with no signal. If it can't read something, **Change the recipe text** lets you fix or paste it. An ingredients list works best, but the method alone is enough because the app picks out the foods it mentions. Untick what you've got (salt, pepper and oil start unticked, and the app learns your cupboard), pick a shop, and add. **Ingredients for the week** does every meal at once and merges duplicates.
 
-Old weeks are kept for good: use the arrows to look back. **Plan again** on any meal copies it, screenshots and ingredients included, to a day this week or next. The tab can be hidden in Settings > Tabs at the top.
+Old weeks are kept for good: use the arrows to look back, or **Recipes you've had** to search every meal, see what you haven't had for a while, and plan one again. **Plan again** on any meal copies it, screenshots and ingredients included, to a day this week or next. The tab can be hidden in Settings > Tabs at the top.
 
 ## Moving lists to another phone, or from the old address
 
@@ -55,10 +56,15 @@ Everything comes across: private shops, hidden tabs, history and shared lists. T
 
 **Releasing a change.** Edit the files, change `CACHE` in `sw.js` (for example `trolley-v13`), and commit. Phones pick up the new version the next time the app opens with signal, sometimes after closing and reopening it once. Settings shows the version number at the bottom.
 
+## Tests
+
+`tests/` holds the automated checks (Playwright, Python) and a small stand-in for Firebase so they run without touching the real database. To run them on a computer: `pip install playwright && playwright install chromium`, then from the repo folder start `python3 -m http.server 8765` and `python3 tests/fakefb/server.py`, and run any `python3 tests/test_*.py`.
+
 ## Credits
 
 - Screenshot reading: [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0), in `ocr/v5`.
-- QR codes: qrcode-generator (MIT). QR scanning: jsQR (Apache-2.0).
+- QR codes: qrcode-generator (MIT). QR scanning: jsQR (Apache-2.0). Barcode scanning: ZXing (Apache-2.0), in `vendor/`.
+- Product names: [Open Food Facts](https://world.openfoodfacts.org) (open data, ODbL).
 
 ## Things to know
 

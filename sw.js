@@ -1,7 +1,7 @@
 // Trolley service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'trolley-v26';
-// The screenshot reader (about 7 MB) is kept across app updates. Its folder name carries its version.
+const CACHE = 'trolley-v27';
+// The screenshot reader (about 7 MB) and the barcode reader are kept across app updates. Their paths carry their versions.
 const OCR_CACHE = 'trolley-ocr';
 const ASSETS = [
   './',
@@ -44,7 +44,7 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.includes('/ocr/')) {
+  if (url.pathname.includes('/ocr/') || url.pathname.includes('/vendor/')) {
     event.respondWith(caches.open(OCR_CACHE).then(async cache => {
       const hit = await cache.match(req, { ignoreSearch: true });
       if (hit) return hit;
