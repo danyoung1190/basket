@@ -33,6 +33,12 @@ with sync_playwright() as p:
 
     open_item(A, 'Home', 'Glorp flakes')
     check('Search box shown', A.locator('#sheet [data-secq]').count() == 1)
+    check('Opening an item does not pop the keyboard up', A.evaluate("!document.activeElement.matches('input, textarea')"))
+    h0 = A.evaluate("sheet.offsetHeight")
+    A.click('#sheet [data-secq]'); A.wait_for_timeout(500)
+    search(A, 'zzzz')
+    check('Sheet keeps its height while searching', abs(A.evaluate("sheet.offsetHeight") - h0) <= 2, (h0, A.evaluate("sheet.offsetHeight")))
+    search(A, '')
     c0 = chips(A)
     check('Empty search shows the shop sections only', c0[0] == 'None' and c0[-1] == '+ New section' and 'Baby' not in c0, c0)
 
@@ -55,6 +61,12 @@ with sync_playwright() as p:
     A.press('#sheet [data-secq]', 'Enter'); A.wait_for_timeout(400)
     check('Enter picks the top match', secof(A, 'Home', 'Zing hoops') == 'Breakfast & spreads')
 
+    A.evaluate("openPrompt({ title:'Rename item', value:'x', onSave: () => {} })"); A.wait_for_timeout(300)
+    check('Short forms still start with the keyboard up', A.evaluate("document.activeElement.matches('#sheet input')"))
+    A.keyboard.press('Escape'); A.wait_for_timeout(350)
+    A.evaluate("openLibrary()"); A.wait_for_timeout(300)
+    check('Recipe library does not pop the keyboard up', A.evaluate("!document.activeElement.matches('input, textarea')"))
+    A.keyboard.press('Escape'); A.wait_for_timeout(350)
     # Typos
     open_item(A, 'Home', 'Ice cubes'); search(A, 'frozn')
     check('Typo still finds Frozen', chips(A)[0] == 'Frozen', chips(A))

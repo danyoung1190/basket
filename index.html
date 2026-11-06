@@ -489,7 +489,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.7.2';
+const APP_VERSION = '2.7.3';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1675,7 +1675,9 @@ function openSheet(html, ctx){
   sheet.hidden = false; backdrop.hidden = false;
   document.body.classList.add('sheet-open');
   requestAnimationFrame(() => { sheet.classList.add('open'); backdrop.classList.add('open'); });
-  const input = sheet.querySelector('input.field');
+  sheet.style.minHeight = '';
+  // Short forms start with the keyboard up. Search boxes inside bigger sheets (data-nofocus) wait to be tapped.
+  const input = sheet.querySelector('input.field:not([data-nofocus])');
   if (input) { input.focus(); input.select(); } else sheet.focus({ preventScroll:true });
 }
 function closeSheet(){
@@ -1748,6 +1750,16 @@ if (window.visualViewport) {
 window.addEventListener('resize', () => { fitLayer(); if (typeof drawTrolley === 'function' && !dock.hidden) drawTrolley(); });
 window.addEventListener('orientationchange', () => setTimeout(fitLayer, 300));
 fitLayer();
+// iPhone doesn't always report the screen growing back when the keyboard closes, which leaves pop-ups
+// pushed up with a gap underneath. Measure again once it has gone.
+document.addEventListener('focusout', () => { setTimeout(fitLayer, 60); setTimeout(fitLayer, 400); });
+// Tapping a search box in a sheet: bring it to the top of the sheet so the results show above the keyboard,
+// and hold the sheet's height so it doesn't shrink and jump about as the results get fewer.
+sheet.addEventListener('focusin', e => {
+  if (!e.target.matches('[data-nofocus]')) return;
+  sheet.style.minHeight = `min(${sheet.offsetHeight}px, 90%)`;
+  setTimeout(() => sheet.scrollTo({ top:Math.max(0, e.target.offsetTop - 44), behavior:'smooth' }), 300);
+});
 
 function destBtn(id, name, color, usual){
   return `<button type="button" class="destbtn${usual ? ' usual' : ''}" data-act="moveTo" data-shop="${esc(id)}" style="--c:${color}">`
@@ -1779,7 +1791,7 @@ function openItemSheet(id){
   let secHtml = '';
   if (shop) {
     secHtml = `<h3 class="sh-label">Section in ${esc(shop.name)}</h3>`
-      + '<input class="field secq" type="search" data-secq placeholder="Find a section, e.g. cereal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Find a section">'
+      + '<input class="field secq" type="search" data-secq data-nofocus placeholder="Find a section, e.g. cereal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Find a section">'
       + `<div class="chips" data-secchips>${secChips(shop, sec, '')}</div>`;
   }
   openSheet(
@@ -4048,7 +4060,7 @@ function libraryRows(){
 function openLibrary(){
   const sorts = [['stale', 'Not had for a while'], ['often', 'Most often'], ['az', 'A to Z']];
   openSheet(`<h2>Recipes you've had</h2><p class="sub">Every meal you've planned. Tap Plan to put one on a day this week or next.</p>`
-    + `<input class="field" type="search" data-libq placeholder="Search, e.g. chilli" value="${esc(libQuery)}" autocomplete="off" aria-label="Search recipes">`
+    + `<input class="field" type="search" data-libq data-nofocus placeholder="Search, e.g. chilli" value="${esc(libQuery)}" autocomplete="off" aria-label="Search recipes">`
     + `<div class="daychips" style="margin:10px 0 4px">${sorts.map(([v, l]) => `<button type="button" class="chip" data-mact="libSort" data-v="${v}" aria-pressed="${v === libSort}">${l}</button>`).join('')}</div>`
     + `<div data-liblist>${libraryRows()}</div>`, { type:'library' });
   hydrateImages(sheet);
