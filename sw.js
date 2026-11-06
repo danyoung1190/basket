@@ -1,6 +1,6 @@
 // Trolley service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'trolley-v28';
+const CACHE = 'trolley-v29';
 // The screenshot reader (about 7 MB) and the barcode reader are kept across app updates. Their paths carry their versions.
 const OCR_CACHE = 'trolley-ocr';
 const ASSETS = [
@@ -16,7 +16,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -58,7 +58,8 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(isPage ? './index.html' : req, { ignoreSearch: true });
-      const network = fetch(req)
+      // Always ask the server (never the phone's web cache), or an old copy can come back for an hour.
+      const network = fetch(isPage ? new Request('./index.html', { cache: 'no-cache' }) : new Request(req, { cache: 'no-cache' }))
         .then(res => {
           if (res && res.ok) cache.put(isPage ? './index.html' : req, res.clone());
           return res;

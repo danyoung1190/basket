@@ -489,7 +489,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.7.1';
+const APP_VERSION = '2.7.2';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1141,7 +1141,7 @@ function toast(msg, withUndo){
   toastTimer = setTimeout(hideToast, withUndo ? 6000 : 2600);
 }
 function hideToast(){ toastEl.classList.remove('show'); }
-toastEl.addEventListener('click', e => { if (e.target.closest('[data-act="undo"]')) undo(); });
+toastEl.addEventListener('click', e => { if (e.target.closest('[data-act="undo"]')) undo(); if (e.target.closest('[data-act="reloadApp"]')) location.reload(); });
 
 /* ---------- Rendering ---------- */
 const tabsEl = $('#tabs'), listEl = $('#list'), doneWrap = $('#doneWrap'), emptyEl = $('#empty');
@@ -2322,6 +2322,23 @@ window.addEventListener('storage', e => {
 /* ---------- Offline support ---------- */
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  /* A new version takes over in the background. Just after opening, with nothing on the go, switch to it
+     straight away; otherwise offer it. The first install also "takes over", so only act if a version was
+     already running. A Home Screen app can sit open for days, so look for updates whenever it comes back. */
+  const hadVersion = !!navigator.serviceWorker.controller, openedAt = Date.now();
+  let reloading = false, lastCheck = Date.now();
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadVersion || reloading) return;
+    const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (Date.now() - openedAt < 15000 && !sheetCtx && !typing) { reloading = true; location.reload(); return; }
+    toastEl.innerHTML = '<span>New version ready</span><button type="button" data-act="reloadApp">Reload</button>';
+    toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 15000);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastCheck < 10 * 60e3) return;
+    lastCheck = Date.now();
+    navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
 }
 
 /* ---------- Install guide ----------
