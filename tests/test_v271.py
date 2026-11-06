@@ -40,7 +40,9 @@ with sync_playwright() as p:
     check('Sheet keeps its height while searching', abs(A.evaluate("sheet.offsetHeight") - h0) <= 2, (h0, A.evaluate("sheet.offsetHeight")))
     search(A, '')
     c0 = chips(A)
-    check('Empty search shows the shop sections only', c0[0] == 'None' and c0[-1] == '+ New section' and 'Baby' not in c0, c0)
+    check('Short list: where it is now and All sections', c0 == ['None', f'All sections ({len(secs(A, "Home"))})'], c0)
+    A.click('#sheet [data-act="allSecs"]'); A.wait_for_timeout(150); c1 = chips(A)
+    check('All sections shows the shop list', c1[0] == 'None' and 'Dairy & eggs' in c1 and c1[-1] == '+ New section' and 'Baby' not in c1, c1)
 
     search(A, 'cereal'); c = chips(A)
     check('"cereal" finds Breakfast & spreads first', c and c[0] == 'Breakfast & spreads', c)
@@ -80,7 +82,16 @@ with sync_playwright() as p:
 
     # Clearing the search goes back to the normal list
     open_item(A, 'Home', 'Milk'); search(A, 'cer'); search(A, '')
-    check('Cleared search shows shop sections', chips(A)[0] == 'None' and 'Car stuff' in chips(A))
+    check('Cleared search goes back to the short list', chips(A)[0] == 'Dairy & eggs' and chips(A)[-1].startswith('All sections'), chips(A))
+    A.keyboard.press('Escape'); A.wait_for_timeout(350)
+    # A misfiled item gets its proper aisle offered as the one suggestion
+    A.evaluate("setSection(state.items.find(x=>x.name==='Milk').id, state.shops.find(s=>s.name==='Home').sections.find(z=>z.name==='Car stuff').id)")
+    open_item(A, 'Home', 'Milk')
+    check('Misfiled item: current plus its proper aisle', chips(A) == ['Car stuff', 'Dairy & eggs', f'All sections ({len(secs(A, "Home"))})'], chips(A))
+    A.locator('#sheet [data-secchips] .chip').nth(1).click(); A.wait_for_timeout(350)
+    check('Suggestion moves it back', secof(A, 'Home', 'Milk') == 'Dairy & eggs')
+    open_item(A, 'Home', 'Milk')
+    check('Rename and Remove fit on screen', A.evaluate("(() => { const b=[...sheet.querySelectorAll('button')].find(x=>/Remove/.test(x.textContent)); const r=b.getBoundingClientRect(); return r.bottom <= innerHeight; })()"))
     A.keyboard.press('Escape'); A.wait_for_timeout(300)
 
     settle(A, B, ms=1500)

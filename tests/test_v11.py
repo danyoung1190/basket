@@ -83,6 +83,7 @@ with sync_playwright() as p:
     # Her override wins: move Bananas to Snacks & treats, remove, re-add -> Snacks & treats
     hold(page, item(page, 'Bananas'))
     sid = [s['id'] for s in st['shops'][0]['sections'] if s['name'] == 'Snacks & sweets'][0]
+    page.click('#sheet [data-act="allSecs"]'); page.wait_for_timeout(150)
     page.click(f'#sheet [data-act="setSection"][data-sec="{sid}"]'); page.wait_for_timeout(350)
     hold(page, item(page, 'Bananas'))
     page.click('#sheet [data-act="removeItem"]'); page.wait_for_timeout(300)

@@ -489,7 +489,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.7.3';
+const APP_VERSION = '2.7.4';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1792,7 +1792,7 @@ function openItemSheet(id){
   if (shop) {
     secHtml = `<h3 class="sh-label">Section in ${esc(shop.name)}</h3>`
       + '<input class="field secq" type="search" data-secq data-nofocus placeholder="Find a section, e.g. cereal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Find a section">'
-      + `<div class="chips" data-secchips>${secChips(shop, sec, '')}</div>`;
+      + `<div class="chips" data-secchips>${secChips(shop, sec, '', false, it.name)}</div>`;
   }
   openSheet(
     `<h2>${esc(it.name)}</h2><p class="sub">${esc(where)}</p>`
@@ -1830,11 +1830,23 @@ function secMatches(shop, q){
     return { ...c, sc };
   }).filter(c => c.sc > 0).sort((a, b) => b.sc - a.sc).slice(0, 6);
 }
-function secChips(shop, cur, q){
-  if (!clean(q)) {
+function secChips(shop, cur, q, all, name){
+  if (!clean(q) && all) {
     return secChip('data-sec=""', 'None', !cur)
       + shop.sections.map(s => secChip(`data-sec="${esc(s.id)}"`, s.name, cur && cur.id === s.id)).join('')
       + '<button type="button" class="chip ghost" data-act="newSection">+ New section</button>';
+  }
+  if (!clean(q)) {
+    // Kept short so Rename and Remove stay on screen: where it is now, our best guess if that's different,
+    // and the full list one tap away. The search box above covers everything else.
+    let out = cur ? secChip(`data-sec="${esc(cur.id)}"`, cur.name, true) : secChip('data-sec=""', 'None', true);
+    const cat = name && categoryFor(name);
+    if (cat) {
+      const have = sectionForCategory(shop, cat);
+      if (!have) out += secChip(`data-std="${esc(cat)}"`, cat, false);
+      else if (!cur || have !== cur.id) { const hs = sectionOf(shop, have); if (hs) out += secChip(`data-sec="${esc(hs.id)}"`, hs.name, false); }
+    }
+    return out + `<button type="button" class="chip ghost" data-act="allSecs">All sections${shop.sections.length ? ` (${shop.sections.length})` : ''}</button>`;
   }
   const hits = secMatches(shop, q);
   const exact = hits.some(h => fold(h.name) === fold(q));
@@ -1849,7 +1861,7 @@ function aisleFor(shop, cat){
 sheet.addEventListener('input', e => {
   if (!e.target.matches('[data-secq]') || !sheetCtx || sheetCtx.type !== 'item') return;
   const it = itemById(sheetCtx.id), shop = it && shopById(it.shopId); if (!shop) return;
-  sheet.querySelector('[data-secchips]').innerHTML = secChips(shop, sectionOf(shop, it.sectionId), e.target.value);
+  sheet.querySelector('[data-secchips]').innerHTML = secChips(shop, sectionOf(shop, it.sectionId), e.target.value, false, it.name);
 });
 sheet.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.matches('[data-secq]')) return;
@@ -2077,6 +2089,11 @@ sheet.addEventListener('click', e => {
       if (b.dataset.std && its) { const before = JSON.stringify(state); setSection(item.id, aisleFor(its, b.dataset.std)); undoSnap = before; }
       else setSection(item.id, b.dataset.sec || null);
       closeSheet();
+      break;
+    }
+    case 'allSecs': {
+      const its = item && shopById(item.shopId); if (!its) break;
+      sheet.querySelector('[data-secchips]').innerHTML = secChips(its, sectionOf(its, item.sectionId), '', true, item.name);
       break;
     }
     case 'newSectionNamed': {

@@ -137,6 +137,7 @@ with sync_playwright() as p:
     check('Milk dragged into Dairy & eggs', its['Milk']['sectionId'] == sec['Dairy & eggs'])
     # Set section via sheet
     hold(page, item(page, 'Eggs'))
+    page.click('#sheet [data-act="allSecs"]'); page.wait_for_timeout(150)
     page.click(f'#sheet [data-act="setSection"][data-sec="{sec["Dairy & eggs"]}"]'); page.wait_for_timeout(350)
     its = {i['name']: i for i in state(page)['items']}
     check('Eggs set to Dairy via sheet', its['Eggs']['sectionId'] == sec['Dairy & eggs'])
