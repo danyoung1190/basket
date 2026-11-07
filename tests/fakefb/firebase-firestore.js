@@ -42,7 +42,8 @@ export async function deleteDoc(ref){
 }
 export async function getDocFromServer(ref){ const r = await call('GET', `/doc?path=${encodeURIComponent(ref.path)}`); return snapOf(ref.path, r.exists ? r.data : undefined, false); }
 export async function getDocsFromServer(ref){ const r = await call('GET', `/col?path=${encodeURIComponent(ref.path)}`); return { docs:Object.entries(r.docs).map(([id, d]) => snapOf(ref.path + '/' + id, d, false)) }; }
-export async function waitForPendingWrites(){ await flush(); if (queue.length) throw unavailable(); }
+// Like the real one: waits until the server has every queued write (gives up only when offline).
+export async function waitForPendingWrites(){ while (queue.length && !window.__offline) { await flush(); if (queue.length) await new Promise(r => setTimeout(r, 20)); } if (queue.length) throw unavailable(); }
 export function onSnapshot(ref, opts, cb, errCb){
   if (typeof opts === 'function') { errCb = cb; cb = opts; opts = {}; }
   if (denied(ref.path)) { setTimeout(() => errCb && errCb(deniedErr()), 30); return () => {}; }

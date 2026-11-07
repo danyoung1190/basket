@@ -1,6 +1,6 @@
 // Trolley service worker: makes the app open with no signal.
 // When you change any app file, bump CACHE (e.g. basket-v2) so phones pick up the new version.
-const CACHE = 'trolley-v32';
+const CACHE = 'trolley-v33';
 // The screenshot reader (about 7 MB) and the barcode reader are kept across app updates. Their paths carry their versions.
 const OCR_CACHE = 'trolley-ocr';
 const ASSETS = [

@@ -489,7 +489,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.7.5';
+const APP_VERSION = '2.8.0';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -1364,7 +1364,7 @@ function renderDue(){
 
 function renderBadge(){
   const stale = !state.lastBackupAt || (Date.now() - state.lastBackupAt) > 30 * 864e5;
-  $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof sharingWarning === 'function' && sharingWarning()));
+  $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof sharingWarning === 'function' && sharingWarning()) || (typeof bkFailing === 'function' && bkFailing()));
 }
 
 // Highlight a row. reveal: scroll to it if it's off screen. Returns whether it is off screen.
@@ -2045,10 +2045,17 @@ function openSettings(){
     : '<p class="note">Nothing removed recently.</p>';
   openSheet(
     '<h2>Settings and backup</h2>'
-    + '<p class="note">Your list is saved on this phone only. Back it up now and then, for example to Files or by sending it to yourself. Deleting the app from your Home Screen also deletes its list.</p>'
-    + `<p class="note">Last backup: <strong>${esc(ago(state.lastBackupAt))}</strong></p>`
-    + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="backup">Back up now</button>'
-    + '<label class="btn">Restore<input type="file" id="restoreInput" accept=".json,application/json" hidden></label></div>'
+    + (sharingConfigured()
+      ? backupStatus()
+        + '<button type="button" class="btn wide" style="margin-top:0" data-act="bkList">Go back to an earlier day</button>'
+        + '<button type="button" class="btn wide" data-act="bkCode">Recovery code</button>'
+        + '<button type="button" class="btn wide" data-act="bkIn">Restore from a recovery code</button>'
+        + '<h3 class="sh-label">Backup file</h3>'
+        + '<p class="note">A file you keep yourself, for example in iCloud Drive, as well. Includes recipe screenshots.</p>'
+      : '<p class="note">Your list is saved on this phone only. Back it up now and then, for example to Files or by sending it to yourself. Deleting the app from your Home Screen also deletes its list.</p>')
+    + `<p class="note">Last file saved: <strong>${esc(ago(state.lastBackupAt))}</strong></p>`
+    + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="backup">Save a backup file</button>'
+    + '<label class="btn">Restore a file<input type="file" id="restoreInput" accept=".json,application/json" hidden></label></div>'
     + '<h3 class="sh-label">Layout</h3>'
     + '<button type="button" class="btn wide" style="margin-top:0" data-act="tabsSheet">Tabs at the top</button>'
     + '<h3 class="sh-label">Sharing</h3>'
@@ -2073,6 +2080,11 @@ sheet.addEventListener('submit', async e => {
     return;
   }
   if (kind === 'prompt') { runPrompt(form.querySelector('input').value); return; }
+  if (kind === 'save') {
+    const id = parseSaveCode(form.querySelector('input.code').value);
+    if (!id) { recoveryError('No recovery code found. They look like SAVE-XXXX-XXXX-XXXX-XXXX.'); return; }
+    openBackupList(id, true); return;
+  }
   if (kind === 'move') {
     const id = parseMoveCode(form.querySelector('input.code').value);
     if (!id) { moveError('No move code found. They look like MOVE-XXXX-XXXX-XXXX-XXXX.'); return; }
@@ -2225,6 +2237,24 @@ sheet.addEventListener('click', e => {
     case 'backup':
       backup();
       break;
+    case 'bkList': { const L = bkLocal(); if (L.id) openBackupList(L.id, false); else openRecoveryCode(); break; }
+    case 'bkCode': openRecoveryCode(); break;
+    case 'bkIn': openRecoveryIn(); break;
+    case 'bkPaste': pasteRecovery(); break;
+    case 'bkPick': if (ctx && ctx.id) pickBackup(ctx.id, b.dataset.id, ctx.fromCode); break;
+    case 'bkBack': if (ctx && ctx.id) openBackupList(ctx.id, ctx.fromCode); break;
+    case 'bkNow':
+      b.disabled = true; b.textContent = 'Backing up...';
+      runBackup({ force:true }).then(ok => { if (ok) openRecoveryCode(); else { b.disabled = false; b.textContent = 'Back up now'; toast(bkLocal().lastErr || "The backup didn't work. Try again."); } });
+      break;
+    case 'bkCopy': {
+      const code = formatSave(bkLocal().id || '');
+      (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast('Recovery code copied'), () => toast('Hold the code to copy it'));
+      break;
+    }
+    case 'bkShare':
+      navigator.share({ title:'Virtual Trolley recovery code', text:`My Virtual Trolley recovery code: ${formatSave(bkLocal().id || '')}\nOn a new phone: Settings, Restore from a recovery code.` }).catch(() => {});
+      break;
     case 'shareHub': openShareHub(); break;
     case 'createStart': openCreateShared(); break;
     case 'joinStart': openJoinShared(''); break;
@@ -2260,8 +2290,15 @@ sheet.addEventListener('click', e => {
     case 'confirmRestore':
       if (ctx.type === 'restore' && ctx.data) {
         snapshot();
-        state = normalise(ctx.data);
-        save(); resetSharing(); render(); closeSheet();
+        Object.entries(ctx.images || {}).forEach(([k, d]) => IMG.put(k, d));
+        replaceAll(ctx.data);
+        if (ctx.fromBackup) {
+          // Carry on in the same backup space, without overwriting today's copy with what was just put back.
+          const L = bkLocal();
+          if (L.id !== ctx.fromBackup) bkStore({ id:ctx.fromBackup, lastDay:dayKey(new Date()), lastOk:Date.now(), imgs:Object.keys(ctx.images || {}) });
+          else { L.lastDay = dayKey(new Date()); bkStore(L); }
+        }
+        render(); closeSheet();
         toast(ctx.moved ? 'Your lists have moved in' : 'Backup restored', true);
         if (ctx.moved) finishMove(ctx.moveId);
       }
@@ -2328,7 +2365,7 @@ sheet.addEventListener('change', async e => {
     + `Your current list has ${state.items.length} items and will be replaced. You can undo straight after.</p>`
     + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Cancel</button>'
     + '<button type="button" class="btn primary" data-act="confirmRestore">Replace list</button></div>',
-    { type:'restore', data }
+    { type:'restore', data, images:obj && obj.images && typeof obj.images === 'object' ? obj.images : {} }
   );
 });
 
@@ -2336,7 +2373,9 @@ sheet.addEventListener('change', async e => {
 async function backup(){
   const stamp = new Date().toISOString().slice(0, 10);
   const name = `trolley-backup-${stamp}.json`;
-  const json = JSON.stringify({ app:'trolley', version:1, exportedAt:new Date().toISOString(), data:state });
+  const images = {};
+  for (const k of imgKeysOf(state)) { const d = await fetchImage(k); if (d) images[k] = d; }
+  const json = JSON.stringify({ app:'trolley', version:1, exportedAt:new Date().toISOString(), data:state, images });
   try {
     const file = new File([json], name, { type:'application/json' });
     if (navigator.canShare && navigator.canShare({ files:[file] })) {
@@ -2590,6 +2629,16 @@ function adoptMealPlan(s){
   toast('That code is your meal plan, so it is in Meals now');
 }
 function resetSharing(){ [...live.keys()].forEach(unsubscribe); startSharing(); }
+/* Put a whole different copy of the lists in place (a backup, a file, a move). Disconnect shared lists and
+   the meal plan FIRST: saving while still connected would read anything added on the other phone since that
+   copy as "deleted here" and delete it there too. Reconnecting then merges: what's on the server stays, and
+   anything only in the copy (things removed since) goes back up. */
+function replaceAll(data){
+  [...live.keys()].forEach(unsubscribe);
+  if (MS) { try { if (MS.unsub) MS.unsub(); if (MS.unsubMeta) MS.unsubMeta(); } catch(e) {} MS = null; }
+  state = normalise(data);
+  save(); startSharing();
+}
 function unsubscribe(id){
   const L = live.get(id); if (!L) return;
   L.unsubs.forEach(u => { try { u(); } catch(e) {} });
@@ -3679,8 +3728,8 @@ async function importMove(id){
     data.welcomed = true;
     const empty = !state.items.length && !state.shops.length;
     if (empty) {
-      snapshot(); state = normalise(data);
-      save(); resetSharing(); render(); closeSheet();
+      snapshot(); replaceAll(data);
+      render(); closeSheet();
       toast('Your lists have moved in', true);
       finishMove(id);
     } else {
@@ -3692,6 +3741,190 @@ async function importMove(id){
   } catch(e) { moveError(e.message && !e.code ? e.message : fbErrorText(e)); }
 }
 function finishMove(id){ if (fb) fb.fs.deleteDoc(transferRef(id)).catch(() => {}); }
+
+/* ---------- Automatic backup ----------
+   Once a day, a few seconds after the app opens with signal, this phone saves a full copy of everything
+   (every list, shared or not, meals, history, barcodes) to Firebase at lists/{backupId}, apart from any
+   shared list. Copies: one per day for 14 days, then one per week for 12 weeks, and never fewer than the
+   newest 5 (so not opening the app for months can't prune them all away). Recipe screenshots are copied
+   once each and kept. The recovery code (SAVE-...) is the backupId, and brings it all back on a new phone.
+   Restoring goes through the same Replace sheet as a backup file, so shared lists merge rather than lose
+   anything the other person added. */
+const BK_KEY = 'trolley.backup', BK_DAYS = 14, BK_WEEKS = 12, BK_MIN = 5, BK_CHUNK = 300000;
+const formatSave = id => 'SAVE-' + id.match(/.{1,4}/g).join('-');
+function parseSaveCode(raw){
+  const m = String(raw || '').toUpperCase().match(/SAVE[\s-]*((?:[A-Z0-9]{4}[\s-]*){4})/);
+  if (!m) return null;
+  const id = m[1].replace(/[^A-Z0-9]/g, '');
+  return id.length === 16 && [...id].every(c => CODE_ALPHABET.includes(c)) ? id : null;
+}
+function bkLocal(){ try { return JSON.parse(localStorage.getItem(BK_KEY)) || {}; } catch(e) { return {}; } }
+function bkStore(o){ safeSet(BK_KEY, JSON.stringify(o)); }
+const bkRef = (id, ...rest) => fb.fs.doc(fb.db, 'lists', id, ...rest);
+const bkWeek = t => { const d = new Date(t); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dayKey(d); };
+const imgKeysOf = data => [...new Set((data.meals || []).flatMap(m => m.imgs || []))];
+function bkKeep(snaps, now){
+  const sorted = snaps.slice().sort((a, b) => b.at - a.at), weeks = new Set();
+  return sorted.filter((x, i) => {
+    if (i < BK_MIN || now - x.at < BK_DAYS * DAY) return true;
+    if (now - x.at >= BK_WEEKS * 7 * DAY) return false;
+    const w = bkWeek(x.at); if (weeks.has(w)) return false;
+    weeks.add(w); return true;
+  });
+}
+const worthSaving = () => state.items.length || state.shops.length || (state.meals || []).length || Object.keys(state.history).length;
+
+let bkBusy = false;
+// opts.force: run even if today's copy is done. opts.now: the time to use (tests).
+async function runBackup(opts = {}){
+  if (bkBusy || !sharingConfigured() || !worthSaving()) return false;
+  const now = opts.now || Date.now(), day = dayKey(new Date(now)), L = bkLocal();
+  if (!opts.force && L.lastDay === day) return false;
+  bkBusy = true; L.lastTry = now; if (!L.firstTry) L.firstTry = now; bkStore(L);
+  try {
+    await loadFirebase();
+    const id = L.id || newListId();
+    const head = await withTimeout(fb.fs.getDocFromServer(bkRef(id)), 20000);
+    const hv = head.exists() ? head.data() || {} : null;
+    if (hv && hv.kind !== 'backup') throw new Error('That backup space is in use by something else.');
+    let snaps = hv && Array.isArray(hv.snaps) ? hv.snaps.filter(x => x && x.id && x.at) : [];
+    await bkImages(id, L);   // screenshots first, so no copy ever points at one that isn't saved
+    const json = JSON.stringify({ app:'trolley', version:1, exportedAt:new Date(now).toISOString(), data:state });
+    const parts = []; for (let i = 0; i < json.length; i += BK_CHUNK) parts.push(json.slice(i, i + BK_CHUNK));
+    for (let i = 1; i < parts.length; i++) await withTimeout(fb.fs.setDoc(bkRef(id, 'snaps', `${day}-${i}`), { d:parts[i] }), 20000);
+    await withTimeout(fb.fs.setDoc(bkRef(id, 'snaps', day), { at:now, d:parts[0], parts:parts.length, dev:DEV }), 20000);
+    const before = snaps.find(x => x.id === day);
+    const entry = { id:day, at:now, parts:parts.length, dev:DEV, items:state.items.length, shops:state.shops.length, meals:(state.meals || []).length };
+    snaps = [entry].concat(snaps.filter(x => x.id !== day));
+    const keep = bkKeep(snaps, now), gone = snaps.filter(x => !keep.includes(x));
+    await withTimeout(fb.fs.setDoc(bkRef(id), { kind:'backup', name:'Backup', createdAt:(hv && hv.createdAt) || now, updatedAt:now, snaps:keep }), 20000);
+    // Only call it done once the server has everything (not just this phone's offline queue).
+    if (fb.fs.waitForPendingWrites) await withTimeout(fb.fs.waitForPendingWrites(fb.db), 30000);
+    const dropParts = (sid, from, to) => { for (let i = from; i < to; i++) fb.fs.deleteDoc(bkRef(id, 'snaps', `${sid}-${i}`)).catch(() => {}); };
+    if (before && (before.parts || 1) > parts.length) dropParts(day, parts.length, before.parts);
+    gone.forEach(x => { dropParts(x.id, 1, x.parts || 1); fb.fs.deleteDoc(bkRef(id, 'snaps', x.id)).catch(() => {}); });
+    Object.assign(L, { id, lastDay:day, lastOk:now, lastErr:null });
+    bkStore(L);
+    return true;
+  } catch(e) {
+    L.lastErr = e && e.message && !e.code ? e.message : fbErrorText(e); bkStore(L);
+    return false;
+  } finally { bkBusy = false; renderBadge(); }
+}
+async function bkImages(id, L){
+  const sent = new Set(L.imgs || []);
+  for (const k of imgKeysOf(state)) {
+    if (sent.has(k)) continue;
+    const d = await fetchImage(k);
+    if (!d) continue;   // not on this phone yet; tried again next time
+    await withTimeout(fb.fs.setDoc(bkRef(id, 'images', k), { data:d, at:Date.now() }), 30000);
+    sent.add(k); L.imgs = [...sent]; bkStore(L);
+  }
+}
+function scheduleBackup(){ setTimeout(() => { if (navigator.onLine !== false) runBackup(); }, 6000); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleBackup(); });
+
+const bkFailing = () => { const L = bkLocal(); return !!(sharingConfigured() && L.lastTry && worthSaving() && (L.lastOk || L.firstTry || 0) < Date.now() - 3 * DAY); };
+function backupStatus(){
+  const L = bkLocal();
+  const when = t => `${ago(t)}, ${new Date(t).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })}`;
+  if (L.lastErr && (!L.lastOk || L.lastTry > L.lastOk))
+    return `<p class="note err">The last automatic backup didn't work: ${esc(L.lastErr)}${L.lastOk ? ` The last good one was ${esc(when(L.lastOk).toLowerCase())}.` : ''}</p>`;
+  if (L.lastOk) return `<p class="note">Backed up automatically once a day. Last: <strong>${esc(when(L.lastOk))}</strong></p>`;
+  return '<p class="note">Backs up automatically once a day. The first copy is saved a few seconds after you open the app with signal.</p>';
+}
+
+function snapLabel(x){
+  const d = new Date(x.at), day = ago(x.at);
+  const label = (day === 'Today' || day === 'Yesterday') ? day : d.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
+  return `${label}, ${d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })}`;
+}
+// The copies in one backup space. id: this phone's, or one from a recovery code.
+async function openBackupList(id, fromCode){
+  openSheet('<h2>Finding your backups</h2><p class="sub">This takes a few seconds.</p>', { type:'bkwait' });
+  try {
+    await loadFirebase();
+    const head = await withTimeout(fb.fs.getDocFromServer(bkRef(id)), 20000);
+    const hv = head.exists() ? head.data() || {} : null;
+    if (!hv || hv.kind !== 'backup') throw new Error(fromCode ? "No backup found for that code. Check it and try again." : 'No backups yet.');
+    const snaps = (hv.snaps || []).filter(x => x && x.id && x.at).sort((a, b) => b.at - a.at);
+    if (!snaps.length) throw new Error('No backups yet.');
+    openSheet(
+      `<h2>${fromCode ? 'Your backups' : 'Go back to an earlier day'}</h2>`
+      + '<p class="sub">Pick a day to put back. Anything removed since then comes back. Shared lists keep whatever others added since. You can undo straight after.</p>'
+      + snaps.map(x => `<div class="secrow"><span class="nm">${esc(snapLabel(x))}<small>${x.items} items, ${x.shops} ${x.shops === 1 ? 'shop' : 'shops'}${x.meals ? `, ${x.meals} ${x.meals === 1 ? 'meal' : 'meals'}` : ''}${x.dev && x.dev !== DEV ? ', from another phone' : ''}</small></span>`
+        + `<button type="button" class="mini text" data-act="bkPick" data-id="${esc(x.id)}">Restore</button></div>`).join(''),
+      { type:'bklist', id, fromCode:!!fromCode });
+  } catch(e) {
+    openSheet(`<h2>Couldn't open backups</h2><p class="sub">${esc(e.message && !e.code ? e.message : fbErrorText(e))}</p>`
+      + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Close</button></div>', { type:'bkfail' });
+  }
+}
+async function pickBackup(id, sid, fromCode){
+  openSheet('<h2>Getting that backup</h2><p class="sub">This takes a few seconds.</p>', { type:'bkwait' });
+  try {
+    const first = await withTimeout(fb.fs.getDocFromServer(bkRef(id, 'snaps', sid)), 20000);
+    if (!first.exists()) throw new Error('That copy is no longer there. Pick another day.');
+    const v = first.data() || {}; let txt = v.d || '';
+    for (let i = 1; i < (v.parts || 1); i++) {
+      const part = await withTimeout(fb.fs.getDocFromServer(bkRef(id, 'snaps', `${sid}-${i}`)), 20000);
+      if (!part.exists()) throw new Error('Part of that copy is missing. Pick another day.');
+      txt += (part.data() || {}).d || '';
+    }
+    let obj = null; try { obj = JSON.parse(txt); } catch(e) {}
+    const data = obj && obj.data;
+    if (!isValid(data)) throw new Error("That copy couldn't be read. Pick another day.");
+    data.welcomed = true;
+    const images = {};
+    for (const k of imgKeysOf(data)) {
+      if (await IMG.get(k)) continue;
+      try { const is = await withTimeout(fb.fs.getDocFromServer(bkRef(id, 'images', k)), 30000); const iv = is.exists() ? is.data() : null; if (iv && iv.data) images[k] = iv.data; } catch(e) {}
+    }
+    openSheet(`<h2>Put back ${esc(snapLabel({ at:v.at || Date.now() }).toLowerCase())}?</h2>`
+      + `<p class="note">That copy has ${data.items.length} items across ${data.shops.length} shops${(data.meals || []).length ? ` and ${data.meals.length} ${data.meals.length === 1 ? 'meal' : 'meals'}` : ''}. `
+      + `This phone has ${state.items.length} items, which will be replaced. Shared lists keep whatever others added since. You can undo straight after.</p>`
+      + '<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="button" class="btn primary" data-act="confirmRestore">Put it back</button></div>',
+      { type:'restore', data, images, fromBackup:id, fromCode:!!fromCode });
+  } catch(e) {
+    openSheet(`<h2>Couldn't get that backup</h2><p class="sub">${esc(e.message && !e.code ? e.message : fbErrorText(e))}</p>`
+      + `<div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Close</button><button type="button" class="btn primary" data-act="bkBack">Back to the list</button></div>`,
+      { type:'bkfail', id, fromCode:!!fromCode });
+  }
+}
+function openRecoveryCode(){
+  const L = bkLocal();
+  if (!L.id) {
+    openSheet('<h2>Recovery code</h2><p class="sub">Your code appears once the first backup has been saved. That happens a few seconds after you open the app with signal.</p>'
+      + '<div class="sheet-actions"><button type="button" class="btn primary" data-act="bkNow">Back up now</button></div>', { type:'bkcode' });
+    return;
+  }
+  openSheet('<h2>Recovery code</h2>'
+    + `<p class="bigcode">${esc(formatSave(L.id))}</p>`
+    + '<p class="note">Keep this somewhere safe, like Notes or a message to yourself. On a new phone, open Virtual Trolley, then Settings, Restore from a recovery code. Anyone with the code can see your lists, so only share it with family.</p>'
+    + '<div class="sheet-actions"><button type="button" class="btn" data-act="bkCopy">Copy</button>'
+    + (navigator.share ? '<button type="button" class="btn primary" data-act="bkShare">Send to myself</button>' : '') + '</div>',
+    { type:'bkcode' });
+}
+function openRecoveryIn(){
+  openSheet('<h2>Restore from a recovery code</h2><p class="sub">Paste or type the SAVE code from the old phone. You can see the backups before anything changes.</p>'
+    + `<div class="join-big"><button type="button" class="btn primary" data-act="bkPaste" style="grid-column:1 / -1">${ICON_PASTE}Paste</button></div>`
+    + '<p class="or">or type it</p><form data-form="save" autocomplete="off">'
+    + '<input class="field code" name="code" placeholder="SAVE-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-label="Recovery code">'
+    + '<p class="note err" hidden></p><div class="sheet-actions"><button type="submit" class="btn">Find my backups</button></div></form>',
+    { type:'bkin' });
+}
+function recoveryError(msg){
+  const p = sheet.querySelector('form[data-form="save"] .err');
+  if (p) { p.textContent = msg; p.hidden = false; } else toast(msg);
+}
+async function pasteRecovery(){
+  if (!sheetCtx || sheetCtx.type !== 'bkin') openRecoveryIn();
+  let text = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText(); } catch(e) { text = ''; }
+  const id = parseSaveCode(text);
+  if (!id) { const inp = sheet.querySelector('input.code'); if (inp) inp.focus(); if (text) recoveryError('No recovery code found. They look like SAVE-XXXX-XXXX-XXXX-XXXX.'); return; }
+  openBackupList(id, true);
+}
 
 /* ---------- First run ---------- */
 // Others on a shared list see this next to what she adds. Asked once; Settings can change it.
@@ -3714,7 +3947,8 @@ function maybeWelcome(){
     + '<div class="menu">'
     + `<button type="button" class="menu-item" data-act="welcomeShops"><span class="mi">${ICON_STORE}</span><span><strong>Pick your shops</strong><small>Each gets its own tab, sorted by aisle</small></span></button>`
     + (can ? `<button type="button" class="menu-item" data-act="menuJoin"><span class="mi">${ICON_JOIN}</span><span><strong>Join a shared list</strong><small>Someone has a list to share with you</small></span></button>`
-           + `<button type="button" class="menu-item" data-act="movePaste"><span class="mi">${ICON_PASTE}</span><span><strong>Moving from another phone or the old app</strong><small>Bring everything across with a move code</small></span></button>` : '')
+           + `<button type="button" class="menu-item" data-act="movePaste"><span class="mi">${ICON_PASTE}</span><span><strong>Moving from another phone or the old app</strong><small>Bring everything across with a move code</small></span></button>`
+           + `<button type="button" class="menu-item" data-act="bkIn"><span class="mi">${ICON_PASTE}</span><span><strong>Restore from a recovery code</strong><small>Your old phone is lost or reset</small></span></button>` : '')
     + '</div><div class="sheet-actions"><button type="button" class="btn" data-act="cancel">Just start a list</button></div>',
     { type:'welcome' }
   );
@@ -4623,6 +4857,7 @@ render();
   if (isStandalone()) openJoinShared(listId); else openSafariJoin(listId);
 })();
 startSharing();
+scheduleBackup();
 setTimeout(maybeWelcome, 300);
 let hiddenAt = 0;
 function noteHidden(){ hiddenAt = Date.now(); safeSet(SEEN_KEY, String(hiddenAt)); }

@@ -57,6 +57,14 @@ Everything comes across: private shops, hidden tabs, history and shared lists. T
 
 **Releasing a change.** Edit the files, change `CACHE` in `sw.js` (for example `trolley-v13`), and commit. Phones pick up the new version the next time the app opens with signal, sometimes after closing and reopening it once. Settings shows the version number at the bottom.
 
+## Backups
+
+- **Automatic, once a day.** A few seconds after the app opens with signal, each phone saves a full copy of everything (every list, shared or not, meals, history, saved barcodes) to Firebase at `lists/{backupId}`, apart from any shared list. Copies kept: one a day for 14 days, then one a week for 12 weeks, and never fewer than the newest 5. Recipe screenshots are copied once each and kept. No setup needed: it uses the same Firestore rules as sharing.
+- **Go back to an earlier day**: Settings. Anything removed since that day comes back; shared lists and the meal plan keep whatever the other person added since. Undo works straight after.
+- **Recovery code** (`SAVE-XXXX-XXXX-XXXX-XXXX`): Settings. Keep it in Notes or a message to yourself. On a new phone: Settings (or the welcome screen), Restore from a recovery code. Anyone with the code can read the lists, like a share code.
+- **Backup file**: Settings, Save a backup file. Now includes recipe screenshots. Keep it in iCloud Drive as a copy outside Firebase.
+- A red dot on Settings means no automatic backup has worked for 3 days (or no file saved for 30).
+
 ## Tests
 
 `tests/` holds the automated checks (Playwright, Python) and a small stand-in for Firebase so they run without touching the real database. To run them on a computer: `pip install playwright && playwright install chromium`, then from the repo folder start `python3 -m http.server 8765` and `python3 tests/fakefb/server.py`, and run any `python3 tests/test_*.py`.
