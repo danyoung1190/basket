@@ -489,7 +489,7 @@ textarea.field{width:100%; min-height:150px; padding:12px 14px; resize:vertical;
 'use strict';
 
 /* ---------- Constants ---------- */
-const APP_VERSION = '2.7.4';
+const APP_VERSION = '2.7.5';
 const KEY = 'basket.v1';
 const GOOD_KEY = 'basket.v1.lastgood';
 const MAX_REMOVED = 100;
@@ -900,18 +900,15 @@ function addItem(raw, opts){
       if (qty) same.qty = qty;
       touchHistory(same.name);
       if (opts.quiet) return true;
-      save(); render(); flash(same.id);
-      toast(`${same.name}${qtyLabel(same.qty)} is back on the list`);
+      save(); render(); added(same.id, `${same.name}${qtyLabel(same.qty)} is back on the list`);
     } else if (qty && qty !== same.qty) {
       if (!opts.quiet) snapshot();
       same.qty = qty; same.updatedAt = Date.now();
       histFor(same.name).qty = qty;
       if (opts.quiet) return true;
-      save(); render(); flash(same.id);
-      toast(`${same.name} is now ×${qty}`, true);
+      save(); render(); added(same.id, `${same.name} is now ×${qty}`, true);
     } else if (!opts.quiet) {
-      flash(same.id);
-      toast(`${same.name} is already on the list`);
+      added(same.id, `${same.name} is already on the list`);
     }
     return true;
   }
@@ -923,12 +920,10 @@ function addItem(raw, opts){
   touchHistory(name, shop ? { shopId, sectionId } : null);
   if (parsed.qty) histFor(name).qty = parsed.qty;
   if (opts.quiet) return true;
-  save(); render(); flash(item.id);
+  save(); render();
   const elsewhere = state.items.find(i => i.id !== item.id && i.shopId !== shopId && key(i.name) === k && !i.done);
-  if (elsewhere) {
-    const s = shopById(elsewhere.shopId);
-    toast(`Also on ${s ? s.name : 'your list'}`);
-  }
+  const es = elsewhere && shopById(elsewhere.shopId);
+  added(item.id, elsewhere ? `Also on ${es ? es.name : 'your list'}` : '');
   return true;
 }
 // The quantity she last used for an item, for one-tap adds.
@@ -1141,7 +1136,12 @@ function toast(msg, withUndo){
   toastTimer = setTimeout(hideToast, withUndo ? 6000 : 2600);
 }
 function hideToast(){ toastEl.classList.remove('show'); }
-toastEl.addEventListener('click', e => { if (e.target.closest('[data-act="undo"]')) undo(); if (e.target.closest('[data-act="reloadApp"]')) location.reload(); });
+toastEl.addEventListener('click', e => {
+  if (e.target.closest('[data-act="undo"]')) undo();
+  if (e.target.closest('[data-act="reloadApp"]')) location.reload();
+  const sh = e.target.closest('[data-act="showItem"]');
+  if (sh) { if (document.activeElement) document.activeElement.blur(); hideToast(); flash(sh.dataset.id, true); }
+});
 
 /* ---------- Rendering ---------- */
 const tabsEl = $('#tabs'), listEl = $('#list'), doneWrap = $('#doneWrap'), emptyEl = $('#empty');
@@ -1367,12 +1367,28 @@ function renderBadge(){
   $('#badge').hidden = !((state.items.length >= 5 && stale) || (typeof sharingWarning === 'function' && sharingWarning()));
 }
 
-function flash(id){
+// Highlight a row. reveal: scroll to it if it's off screen. Returns whether it is off screen.
+function flash(id, reveal = true){
   const row = document.querySelector(`.row.item[data-id="${CSS.escape(id)}"]`);
-  if (!row) return;
+  if (!row) return false;
   row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
   const r = row.getBoundingClientRect();
-  if (r.top < 0 || r.bottom > window.innerHeight) row.scrollIntoView({ block:'center', behavior:'smooth' });
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const off = r.top < 0 || r.bottom > vh;
+  if (off && reveal) row.scrollIntoView({ block:'center', behavior:'smooth' });
+  return off;
+}
+/* After adding, stay put: she's usually adding several things from the box at the top, and jumping to
+   wherever the item landed (often an aisle near the bottom) loses her place. If it landed out of sight,
+   say where, with a Show button. */
+function added(id, msg, withUndo){
+  const off = flash(id, false);
+  if (!off) { if (msg) toast(msg, withUndo); return; }
+  const it = itemById(id), shop = it && shopById(it.shopId), sec = shop && sectionOf(shop, it.sectionId);
+  const text = msg || `Added to ${sec ? sec.name : 'the list'}`;
+  toastEl.innerHTML = `<span>${esc(text)}</span>` + (withUndo ? '<button type="button" data-act="undo">Undo</button>' : '')
+    + `<button type="button" data-act="showItem" data-id="${esc(id)}">Show</button>`;
+  toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, withUndo ? 6000 : 3500);
 }
 
 /* ---------- Long press (hold) vs tap ---------- */

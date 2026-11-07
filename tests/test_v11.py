@@ -58,6 +58,7 @@ with sync_playwright() as p:
 
     # Drag Widgets into a hidden empty section (Cupboard)
     page.mouse.move(0, 0)
+    page.evaluate("hideToast()"); page.locator(item(page, 'Widgets')).first.evaluate("el => el.scrollIntoView({ block:'center' })"); page.wait_for_timeout(300)
     g = page.locator(item(page, 'Widgets') + ' .grip').first.bounding_box()
     sx, sy = g['x'] + 25, g['y'] + 27
     page.mouse.move(sx, sy); page.mouse.down(); page.wait_for_timeout(260)
